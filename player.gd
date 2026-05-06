@@ -71,8 +71,7 @@ func _on_planet_contact(body: Node) -> void:
 	if Input.is_action_pressed("thrust"):
 		return
 	landed_planet = body
-	var to_ship: Vector2 = global_position - body.global_position
-	landing_offset = to_ship.normalized() * body.surface_radius
+	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
 
 func _detach() -> void:

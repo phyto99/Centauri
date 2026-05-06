@@ -494,8 +494,16 @@ func find_closest_hex(global_mouse_pos: Vector2) -> String:
 	
 	return closest_key
 
+func _has_landed_player() -> bool:
+	for ship in get_tree().get_nodes_in_group("players"):
+		if is_instance_valid(ship) and ship.get("landed_planet") == self:
+			return true
+	return false
+
 func _input(event):
 	if editing_mode:
+		return
+	if not _has_landed_player():
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var global_mouse_pos = get_global_mouse_position()
@@ -872,6 +880,8 @@ func _on_cultivate_pressed() -> void:
 	current_action = CellState.CULTIVATED
 
 func _on_collect_pressed() -> void:
+	if not _has_landed_player():
+		return
 	if yield_count <= 0:
 		return
 	var cl = get_tree().get_root().find_child("CollectLabel", true, false)
