@@ -827,17 +827,22 @@ func _on_cultivate_pressed() -> void:
 	current_action = CellState.CULTIVATED
 
 func _on_collect_pressed() -> void:
-	if yield_count > 0:
-		food += yield_count
-		total_yield_collected += yield_count
-		emit_signal("food_updated", food)
-		
-		# Reset yield count
-		yield_count = 0
-		emit_signal("yield_updated", yield_count)
-		
-		# Update efficiency after collection
-		update_stats()
+	if yield_count <= 0:
+		return
+	var cl = get_tree().get_root().find_child("CollectLabel", true, false)
+	if not cl:
+		return
+	if not cl.confirmed.is_connected(_on_collect_confirmed):
+		cl.confirmed.connect(_on_collect_confirmed)
+	cl.open(yield_count)
+
+func _on_collect_confirmed(food_amount: int, _fuel_amount: int) -> void:
+	total_yield_collected += yield_count
+	food += food_amount
+	yield_count = 0
+	emit_signal("food_updated", food)
+	emit_signal("yield_updated", yield_count)
+	update_stats()
 
 
 
