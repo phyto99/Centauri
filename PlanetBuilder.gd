@@ -149,6 +149,8 @@ func _physics_process(_delta):
 	for ship in get_tree().get_nodes_in_group("players"):
 		if not is_instance_valid(ship):
 			continue
+		if ship.get("landed_planet") != null:
+			continue   # planet manages position directly; skip gravity
 		var to_planet: Vector2 = global_position - ship.global_position
 		var dist: float = to_planet.length()
 		if dist < 1.0:
