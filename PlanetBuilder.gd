@@ -63,8 +63,14 @@ func _ready():
 	add_to_group("planets")
 	planet_name = _generate_planet_name()
 	input_pickable = true
-	mouse_entered.connect(func(): emit_signal("planet_hovered", self))
-	mouse_exited.connect(func(): emit_signal("planet_unhovered"))
+	mouse_entered.connect(func():
+		emit_signal("planet_hovered", self)
+		if not is_sun:
+			outline_sprite.texture = _TEX_HOVER)
+	mouse_exited.connect(func():
+		emit_signal("planet_unhovered")
+		if not is_sun:
+			outline_sprite.texture = _TEX_DEFAULT)
 	position = starting_position
 	setup_collision_and_outline()
 	set_team_color(team_id)
@@ -72,8 +78,25 @@ func _ready():
 	center_position = Vector2.ZERO
 	calculate_hex_order()
 	generate_grid()
+	_setup_surface_area()
 	if is_sun:
 		_setup_as_sun()
+
+func _setup_surface_area() -> void:
+	surface_area = Area2D.new()
+	surface_area.collision_layer = 0
+	surface_area.collision_mask = 1   # detects ships on layer 1
+	var shape_node := CollisionShape2D.new()
+	var circle := CircleShape2D.new()
+	circle.radius = max(surface_radius, 32.0)
+	shape_node.shape = circle
+	surface_area.add_child(shape_node)
+	add_child(surface_area)
+	surface_area.body_entered.connect(_on_ship_entered)
+
+func _on_ship_entered(body: Node) -> void:
+	if body.is_in_group("players") and body.has_method("land_on_planet"):
+		body.land_on_planet(self)
 
 func _setup_as_sun() -> void:
 	add_to_group("sun_planet")
@@ -148,15 +171,19 @@ func update_cell_positions():
 			cell_data["stamp"].position = cell_data["pos"]
 
 var glow_sprite: Sprite2D
+var surface_area: Area2D
+var surface_radius: float = 0.0
+
+const _TEX_DEFAULT = preload("res://planet/sapphire.svg")
+const _TEX_HOVER   = preload("res://planet/sapphire-open.svg")
+
 func setup_collision_and_outline():
 	collision_shape = CollisionPolygon2D.new()
 	add_child(collision_shape)
 	outline_sprite = Sprite2D.new()
-	var texture = load("res://planet/sapphire-open.svg")
-	if texture:
-		outline_sprite.texture = texture
-		add_child(outline_sprite)
-		outline_sprite.z_index = 1
+	outline_sprite.texture = _TEX_DEFAULT
+	add_child(outline_sprite)
+	outline_sprite.z_index = 1
 
 	glow_sprite = Sprite2D.new()
 	var glow_texture = load("res://planet/glow.svg")
@@ -340,19 +367,19 @@ func update_outline_size():
 		glow_sprite.visible = true
 	
 func update_collision_shape(radius: float):
+	surface_radius = radius
 	var num_points = 32
 	var points = PackedVector2Array()
-	
 	for i in range(num_points):
 		var angle = i * PI * 2 / num_points
-		var point = Vector2(
-			cos(angle) * radius,
-			sin(angle) * radius
-		)
-		points.append(point + center_position)
-	
+		points.append(Vector2(cos(angle), sin(angle)) * radius + center_position)
 	points.append(points[0])
 	collision_shape.polygon = points
+	# Keep surface detection area in sync
+	if surface_area and surface_area.get_child_count() > 0:
+		var shape_node = surface_area.get_child(0)
+		if shape_node and shape_node.shape is CircleShape2D:
+			shape_node.shape.radius = radius
 
 func on_slider_value_changed(value: float):
 	current_size = int(value)

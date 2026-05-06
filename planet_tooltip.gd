@@ -179,6 +179,8 @@ func _on_node_added(node: Node) -> void:
 		_connect_planet(node)
 
 func _connect_planet(planet: Node) -> void:
+	if planet.get("is_sun"):
+		return
 	if not planet.has_signal("planet_hovered"):
 		return
 	if not planet.planet_hovered.is_connected(_on_planet_hovered):
