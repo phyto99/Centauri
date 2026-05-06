@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://hdoj34ls38g2"]
+[gd_scene load_steps=24 format=3 uid="uid://hdoj34ls38g2"]
 
 [ext_resource type="Script" path="res://PlanetBuilder.gd" id="1_e5ibc"]
 [ext_resource type="Script" path="res://main.gd" id="1_omk3f"]
@@ -21,6 +21,7 @@
 [ext_resource type="Texture2D" uid="uid://yoegu2a48mq6" path="res://UI/Timebar.svg" id="17_20s6f"]
 [ext_resource type="Script" path="res://timebar.gd" id="18_7idy5"]
 [ext_resource type="PackedScene" uid="uid://c1gxva4thbixe" path="res://collect_label.tscn" id="19_yvwr0"]
+[ext_resource type="Script" path="res://planet_tooltip.gd" id="22_qouqt"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_r6jxc"]
 shader = ExtResource("16_7gpu8")
@@ -160,6 +161,15 @@ visible = false
 
 [node name="Sprite2D" parent="." instance=ExtResource("3_6u3hu")]
 visible = false
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Control" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("22_qouqt")
 
 [connection signal="pressed" from="UI/CanvasLayer/Claim" to="PlanetBuilder" method="_on_claim_pressed"]
 [connection signal="pressed" from="UI/CanvasLayer/Cultivate" to="PlanetBuilder" method="_on_cultivate_pressed"]

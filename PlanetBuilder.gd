@@ -45,8 +45,12 @@ var max_scale_factor: float = 1
 @export var moves_remaining: int = 999
 @export var editing_mode: bool = false
 
+var planet_name: String = ""
+
 signal moves_updated(remaining)
 signal yield_updated(count)
+signal planet_hovered(planet: Node)
+signal planet_unhovered
 
 
 func _ready():
@@ -56,6 +60,10 @@ func _ready():
 		set_process_input(false)
 		return
 	add_to_group("planets")
+	planet_name = _generate_planet_name()
+	input_pickable = true
+	mouse_entered.connect(func(): emit_signal("planet_hovered", self))
+	mouse_exited.connect(func(): emit_signal("planet_unhovered"))
 	position = starting_position
 	setup_collision_and_outline()
 	set_team_color(team_id)
@@ -880,3 +888,10 @@ func _on_collect_pressed() -> void:
 				
 				# Hide the UI
 				#collect_label.visible = false
+
+func _generate_planet_name() -> String:
+	var adj = ["penitent","silent","broken","amber","hollow","rusted",
+		"verdant","ashen","gilded","sullen","crimson","frosted"]
+	var noun = ["zebra","crane","jackal","lynx","ember","drifter",
+		"herald","bastion","wraith","chorus","specter","anvil"]
+	return adj[randi() % adj.size()] + "-" + noun[randi() % noun.size()]
