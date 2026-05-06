@@ -23,7 +23,6 @@ var rotation_dir  := 0
 var state         := IDLE
 var current_fuel  : float = 0.0
 var food_amount   : float = 0.0
-var _is_thrusting : bool  = false
 
 # Landing state
 var landed_planet             : Node    = null
@@ -41,7 +40,7 @@ func _ready() -> void:
 	current_fuel  = max_fuel
 	gravity_scale = 0.0
 	collision_layer = 1
-	collision_mask  = 3   # ships (1) + planets (2)
+	collision_mask  = 3
 	set_team_color(team_id)
 	add_to_group("players")
 	_setup_landing_area()
@@ -51,7 +50,7 @@ func _ready() -> void:
 func _setup_landing_area() -> void:
 	var area  := Area2D.new()
 	area.collision_layer = 0
-	area.collision_mask  = 2   # detect planet bodies (layer 2)
+	area.collision_mask  = 2
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
 	circle.radius = 28.0
@@ -62,7 +61,7 @@ func _setup_landing_area() -> void:
 	area.body_exited.connect(_on_landing_area_exited)
 
 func _on_landing_area_entered(body: Node) -> void:
-	if body.is_in_group("planets") and not _is_thrusting and landed_planet == null:
+	if body.is_in_group("planets") and landed_planet == null:
 		_land_on(body)
 
 func _on_landing_area_exited(body: Node) -> void:
@@ -103,20 +102,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			camera.zoom *= 1.0 - zoom_speed
 
 func get_input() -> void:
-	_is_thrusting = false
-	thrust        = Vector2.ZERO
-	rotation_dir  = Input.get_axis("rotate_left", "rotate_right")
+	thrust       = Vector2.ZERO
+	rotation_dir = Input.get_axis("rotate_left", "rotate_right")
 
 	if Input.is_action_pressed("thrust") and has_fuel():
-		_is_thrusting = true
 		if landed_planet != null:
 			_detach()
 		thrust = transform.x * engine_power
 		change_state(MOVING)
-		set_collision_mask_value(2, false)   # pass through planets while thrusting
+		set_collision_mask_value(2, false)
 	else:
 		change_state(IDLE)
-		set_collision_mask_value(2, true)    # stop at surfaces when coasting
+		set_collision_mask_value(2, true)
 
 func has_fuel() -> bool:
 	return current_fuel > 0.0
@@ -151,7 +148,7 @@ func _physics_process(_delta: float) -> void:
 		global_position = landed_planet.global_position + landing_offset.rotated(delta_rot)
 		linear_velocity = Vector2.ZERO
 		constant_force  = Vector2.ZERO
-		constant_torque = rotation_dir * spin_power   # rotation still free
+		constant_torque = rotation_dir * spin_power
 		return
 
 	constant_force  = thrust
