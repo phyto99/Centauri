@@ -149,8 +149,8 @@ func _physics_process(_delta):
 	for ship in get_tree().get_nodes_in_group("players"):
 		if not is_instance_valid(ship):
 			continue
-		var to_planet := global_position - ship.global_position
-		var dist := to_planet.length()
+		var to_planet: Vector2 = global_position - ship.global_position
+		var dist: float = to_planet.length()
 		if dist < 1.0:
 			continue
 		ship.apply_central_force(to_planet.normalized() * gravity_strength / dist)
@@ -369,11 +369,6 @@ func update_collision_shape(radius: float):
 		points.append(Vector2(cos(angle), sin(angle)) * radius + center_position)
 	points.append(points[0])
 	collision_shape.polygon = points
-	# Keep surface detection area in sync
-	if surface_area and surface_area.get_child_count() > 0:
-		var shape_node = surface_area.get_child(0)
-		if shape_node and shape_node.shape is CircleShape2D:
-			shape_node.shape.radius = radius
 
 func on_slider_value_changed(value: float):
 	current_size = int(value)
