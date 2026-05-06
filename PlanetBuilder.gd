@@ -473,14 +473,19 @@ func _input(event):
 		var closest_hex = find_closest_hex(global_mouse_pos)
 		
 		if closest_hex != "":
+			# Invalid move: cell already has the same state as current action
+			var current_cell_state = grid[closest_hex].get("state", CellState.UNCLAIMED)
+			if current_cell_state == current_action:
+				return
+
 			# Check if we have moves remaining
 			if moves_remaining <= 0:
 				return  # No moves left, exit the function
-				
+
 			# Decrement moves remaining
 			moves_remaining -= 1
 			emit_signal("moves_updated", moves_remaining)
-			
+
 			if not closest_hex in claimed_nodes:
 				claimed_nodes.append(closest_hex)
 			
@@ -840,6 +845,8 @@ func _on_collect_confirmed(food_amount: int, _fuel_amount: int) -> void:
 	total_yield_collected += yield_count
 	food += food_amount
 	yield_count = 0
+	moves_remaining -= 1
+	emit_signal("moves_updated", moves_remaining)
 	emit_signal("food_updated", food)
 	emit_signal("yield_updated", yield_count)
 	update_stats()
