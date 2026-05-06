@@ -15,6 +15,7 @@ func _ready():
 		# Connect button signals
 	claim_button.pressed.connect(_on_claim_pressed)
 	cultivate_button.pressed.connect(_on_cultivate_pressed)
+	collect_button.pressed.connect(_on_collect_pressed)
 
 	
 	# Set initial button states

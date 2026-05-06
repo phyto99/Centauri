@@ -16,6 +16,10 @@ func _connect_planet(planet: Node) -> void:
 		planet.food_updated.connect(_update_food_total.unbind(1))
 
 func _on_node_added(node: Node) -> void:
+	# Defer: node_added fires before _ready(), so group membership isn't set yet
+	_connect_deferred.call_deferred(node)
+
+func _connect_deferred(node: Node) -> void:
 	if node.is_in_group("planets"):
 		_connect_planet(node)
 		_update_yield_total()
