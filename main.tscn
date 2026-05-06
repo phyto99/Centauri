@@ -1,0 +1,167 @@
+[gd_scene load_steps=23 format=3 uid="uid://hdoj34ls38g2"]
+
+[ext_resource type="Script" path="res://PlanetBuilder.gd" id="1_e5ibc"]
+[ext_resource type="Script" path="res://main.gd" id="1_omk3f"]
+[ext_resource type="PackedScene" uid="uid://bq7m36phxg7xs" path="res://lattice_2.tscn" id="2_pgi42"]
+[ext_resource type="PackedScene" uid="uid://df6olqvpfjjub" path="res://lattice_1.tscn" id="3_4k0bi"]
+[ext_resource type="PackedScene" uid="uid://buufqgcbo6boy" path="res://claim.tscn" id="3_6u3hu"]
+[ext_resource type="Script" path="res://camera_manager.gd" id="3_yaeyt"]
+[ext_resource type="Script" path="res://ui.gd" id="4_hgggt"]
+[ext_resource type="PackedScene" uid="uid://bv72s3wv0r4i0" path="res://player.tscn" id="6_fa4b1"]
+[ext_resource type="Texture2D" uid="uid://cvbowqq7dvm8s" path="res://planet/sapphire-open.svg" id="7_6lr3u"]
+[ext_resource type="PackedScene" uid="uid://cer5vhye1kl8w" path="res://cultivate.tscn" id="9_70svg"]
+[ext_resource type="Texture2D" uid="uid://bi5u57xhyof5v" path="res://UI/claim2.svg" id="11_q1aei"]
+[ext_resource type="Texture2D" uid="uid://bfqo11hrrjlod" path="res://UI/UI(2).png" id="11_st4vk"]
+[ext_resource type="Texture2D" uid="uid://bqup26tj6covj" path="res://UI/UI2(1).png" id="12_00f6v"]
+[ext_resource type="PackedScene" uid="uid://dai4khkf82315" path="res://scoreboard.tscn" id="12_rdf2a"]
+[ext_resource type="Texture2D" uid="uid://b1fe1axpqoltg" path="res://UI/cultivatesmall.svg" id="12_yck52"]
+[ext_resource type="Texture2D" uid="uid://5d3gff7xrii1" path="res://UI/collect.svg" id="13_q2t6h"]
+[ext_resource type="Shader" path="res://timebar.gdshader" id="16_7gpu8"]
+[ext_resource type="Script" path="res://movesleft_2.gd" id="16_o5c86"]
+[ext_resource type="Texture2D" uid="uid://yoegu2a48mq6" path="res://UI/Timebar.svg" id="17_20s6f"]
+[ext_resource type="Script" path="res://timebar.gd" id="18_7idy5"]
+[ext_resource type="PackedScene" uid="uid://c1gxva4thbixe" path="res://collect_label.tscn" id="19_yvwr0"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_r6jxc"]
+shader = ExtResource("16_7gpu8")
+shader_parameter/progress = 0.0
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_omk3f")
+player_scene = ExtResource("6_fa4b1")
+
+[node name="CameraManager" type="Node" parent="."]
+script = ExtResource("3_yaeyt")
+
+[node name="Lattice1" parent="." instance=ExtResource("3_4k0bi")]
+visible = false
+
+[node name="Lattice2" parent="." instance=ExtResource("2_pgi42")]
+visible = false
+
+[node name="PlanetBuilder" type="RigidBody2D" parent="."]
+script = ExtResource("1_e5ibc")
+sprite_scene = ExtResource("3_4k0bi")
+claim_stamp_scene = ExtResource("3_6u3hu")
+cultivate_stamp_scene = ExtResource("9_70svg")
+
+[node name="Sprite2D" type="Sprite2D" parent="PlanetBuilder"]
+visible = false
+texture = ExtResource("7_6lr3u")
+
+[node name="UI" type="Control" parent="." node_paths=PackedStringArray("claim_button", "cultivate_button")]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("4_hgggt")
+claim_button = NodePath("CanvasLayer/Claim")
+cultivate_button = NodePath("CanvasLayer/Cultivate")
+
+[node name="SizeSlider" type="HSlider" parent="UI"]
+layout_mode = 0
+offset_right = 2205.0
+offset_bottom = 32.0
+max_value = 301.0
+
+[node name="SizeLabel" type="Label" parent="UI"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="UI"]
+
+[node name="Claim" type="Button" parent="UI/CanvasLayer"]
+offset_left = 957.0
+offset_top = 504.0
+offset_right = 1143.0
+offset_bottom = 544.0
+text = "     Claim"
+icon = ExtResource("11_q1aei")
+alignment = 0
+expand_icon = true
+
+[node name="Cultivate" type="Button" parent="UI/CanvasLayer"]
+offset_left = 957.0
+offset_top = 546.0
+offset_right = 1143.0
+offset_bottom = 582.0
+text = "    Cultivate"
+icon = ExtResource("12_yck52")
+alignment = 0
+expand_icon = true
+
+[node name="Collect" type="Button" parent="UI/CanvasLayer"]
+offset_left = 957.0
+offset_top = 584.0
+offset_right = 1143.0
+offset_bottom = 620.0
+text = "    Collect"
+icon = ExtResource("13_q2t6h")
+alignment = 0
+expand_icon = true
+
+[node name="playerpanel" type="Sprite2D" parent="UI/CanvasLayer"]
+position = Vector2(183, 618)
+scale = Vector2(0.8, 0.8)
+texture = ExtResource("11_st4vk")
+
+[node name="playercrops" type="Label" parent="UI/CanvasLayer"]
+modulate = Color(0.137255, 0.898039, 1, 1)
+offset_left = 234.0
+offset_top = 592.0
+offset_right = 330.0
+offset_bottom = 647.0
+theme_override_font_sizes/font_size = 27
+text = "999"
+
+[node name="movesleft" type="Sprite2D" parent="UI/CanvasLayer"]
+position = Vector2(1050, 631)
+scale = Vector2(0.8, 0.8)
+texture = ExtResource("12_00f6v")
+
+[node name="movesleft2" type="Label" parent="UI/CanvasLayer"]
+offset_left = 948.0
+offset_top = 619.0
+offset_right = 988.0
+offset_bottom = 647.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 15
+text = "900"
+horizontal_alignment = 2
+script = ExtResource("16_o5c86")
+
+[node name="Scoreboard" parent="UI/CanvasLayer" instance=ExtResource("12_rdf2a")]
+position = Vector2(0, 10)
+
+[node name="Timebar" type="Sprite2D" parent="UI/CanvasLayer"]
+material = SubResource("ShaderMaterial_r6jxc")
+position = Vector2(576, 12)
+scale = Vector2(2.41004, 2)
+texture = ExtResource("17_20s6f")
+script = ExtResource("18_7idy5")
+
+[node name="Timer" type="Timer" parent="UI/CanvasLayer/Timebar"]
+wait_time = 15.742
+
+[node name="CollectLabel" parent="UI" instance=ExtResource("19_yvwr0")]
+visible = false
+
+[node name="Player" parent="." instance=ExtResource("6_fa4b1")]
+
+[node name="ButtonControl" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Cultivate" parent="." instance=ExtResource("9_70svg")]
+visible = false
+
+[node name="Sprite2D" parent="." instance=ExtResource("3_6u3hu")]
+visible = false
+
+[connection signal="pressed" from="UI/CanvasLayer/Claim" to="PlanetBuilder" method="_on_claim_pressed"]
+[connection signal="pressed" from="UI/CanvasLayer/Cultivate" to="PlanetBuilder" method="_on_cultivate_pressed"]
+[connection signal="pressed" from="UI/CanvasLayer/Collect" to="PlanetBuilder" method="_on_collect_pressed"]
+[connection signal="timeout" from="UI/CanvasLayer/Timebar/Timer" to="UI/CanvasLayer/Timebar" method="_on_timer_timeout"]

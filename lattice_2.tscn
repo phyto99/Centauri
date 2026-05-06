@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bq7m36phxg7xs"]
+
+[ext_resource type="Texture2D" uid="uid://y2e1xb4tt2c6" path="res://lattice2.svg" id="1_s7dgt"]
+
+[node name="Lattice2" type="Sprite2D"]
+texture = ExtResource("1_s7dgt")

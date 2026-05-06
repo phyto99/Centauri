@@ -1,0 +1,29 @@
+[gd_scene load_steps=7 format=3 uid="uid://cer5vhye1kl8w"]
+
+[ext_resource type="Texture2D" uid="uid://6utohss8ge8x" path="res://cultivate1.svg" id="1_2unsx"]
+[ext_resource type="Shader" path="res://cyanwhite.gdshader" id="1_splp2"]
+[ext_resource type="Texture2D" uid="uid://c3oksiorycg8x" path="res://cultivate2.svg" id="2_pgres"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_1yavt"]
+shader = ExtResource("1_splp2")
+shader_parameter/team_color = Color(1, 1, 1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_31sv1"]
+shader = ExtResource("1_splp2")
+shader_parameter/team_color = Color(1, 1, 1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_cqki8"]
+shader = ExtResource("1_splp2")
+shader_parameter/team_color = Color(1, 1, 1, 1)
+
+[node name="Cultivate" type="Node2D"]
+material = SubResource("ShaderMaterial_1yavt")
+
+[node name="Cultivate2" type="Sprite2D" parent="."]
+material = SubResource("ShaderMaterial_31sv1")
+position = Vector2(-1, -9)
+texture = ExtResource("2_pgres")
+
+[node name="Cultivate" type="Sprite2D" parent="."]
+material = SubResource("ShaderMaterial_cqki8")
+texture = ExtResource("1_2unsx")

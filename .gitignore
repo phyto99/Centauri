@@ -1,0 +1,13 @@
+# Godot
+.godot/
+*.tmp
+
+# Exported binaries
+*.exe
+*.console.exe
+*.x86_64
+*.x86_32
+*.arm64
+
+# Zips
+*.zip

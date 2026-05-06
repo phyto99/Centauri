@@ -1,0 +1,13 @@
+[gd_scene load_steps=4 format=3 uid="uid://bcnqu44typuk5"]
+
+[ext_resource type="PackedScene" uid="uid://bv72s3wv0r4i0" path="res://player.tscn" id="1_0a3n3"]
+[ext_resource type="PackedScene" uid="uid://boat7g7ma8yyp" path="res://control.tscn" id="2_mchkt"]
+[ext_resource type="PackedScene" uid="uid://b3qyxdg7bu453" path="res://Lattice.tscn" id="3_3c8rd"]
+
+[node name="Main1" type="Node"]
+
+[node name="Player" parent="." instance=ExtResource("1_0a3n3")]
+
+[node name="Control" parent="." instance=ExtResource("2_mchkt")]
+
+[node name="RigidBody2D" parent="." instance=ExtResource("3_3c8rd")]

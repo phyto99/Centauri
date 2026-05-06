@@ -1,0 +1,41 @@
+[gd_scene load_steps=5 format=3 uid="uid://dai4khkf82315"]
+
+[ext_resource type="Texture2D" uid="uid://b1fe1axpqoltg" path="res://UI/cultivatesmall.svg" id="1_23yyg"]
+[ext_resource type="Texture2D" uid="uid://5d3gff7xrii1" path="res://UI/collect.svg" id="2_nfrqw"]
+[ext_resource type="Texture2D" uid="uid://bi5u57xhyof5v" path="res://UI/claim2.svg" id="3_oyw4p"]
+[ext_resource type="Script" path="res://item_list.gd" id="4_swhjb"]
+
+[node name="Scoreboard" type="Node2D"]
+scale = Vector2(1.2, 1.2)
+
+[node name="Label" type="Label" parent="."]
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="ItemList" type="ItemList" parent="."]
+offset_right = 641.0
+offset_bottom = 98.0
+scale = Vector2(0.8, 0.8)
+select_mode = 1
+item_count = 16
+max_columns = 8
+item_0/text = "      "
+item_0/icon = ExtResource("1_23yyg")
+item_1/text = "       "
+item_1/icon = ExtResource("2_nfrqw")
+item_2/text = "       "
+item_2/icon = ExtResource("3_oyw4p")
+item_3/text = "food        "
+item_4/text = "diversity       "
+item_5/text = "dominion       "
+item_6/text = "efficiency       "
+item_7/text = "Total"
+item_8/text = "0          "
+item_9/text = "0         "
+item_10/text = "0            "
+item_11/text = "0                  "
+item_12/text = "0                      "
+item_13/text = "0                       "
+item_14/text = "0                  "
+item_15/text = "0"
+script = ExtResource("4_swhjb")
