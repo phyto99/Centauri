@@ -26,6 +26,15 @@ func _ready() -> void:
 	_cam.zoom = Vector2(0.5, 0.5)
 	add_child(_cam)
 	_build_ui()
+	_spawn_sun()
+
+func _spawn_sun() -> void:
+	if not planet_scene:
+		return
+	var sun = planet_scene.instantiate()
+	sun.is_sun = true
+	sun.position = Vector2.ZERO
+	add_child(sun)
 
 
 func _build_ui() -> void:
@@ -200,17 +209,19 @@ func _deselect() -> void:
 
 
 func _on_size_changed(value: float) -> void:
-	if _selected and is_instance_valid(_selected):
+	if _selected and is_instance_valid(_selected) and not _selected.get("is_sun"):
 		_selected.on_slider_value_changed(value)
 
 
 func _on_mass_changed(value: float) -> void:
-	if _selected and is_instance_valid(_selected):
+	if _selected and is_instance_valid(_selected) and not _selected.get("is_sun"):
 		_selected.mass = value
 
 
 func _on_delete() -> void:
 	if _selected and is_instance_valid(_selected):
+		if _selected.get("is_sun"):
+			return
 		_selected.queue_free()
 	_deselect()
 

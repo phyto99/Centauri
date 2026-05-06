@@ -44,6 +44,7 @@ var max_scale_factor: float = 1
 @export var starting_position: Vector2 = Vector2(0, 0)
 @export var moves_remaining: int = 999
 @export var editing_mode: bool = false
+@export var is_sun: bool = false
 
 var planet_name: String = ""
 
@@ -71,6 +72,25 @@ func _ready():
 	center_position = Vector2.ZERO
 	calculate_hex_order()
 	generate_grid()
+	if is_sun:
+		_setup_as_sun()
+
+func _setup_as_sun() -> void:
+	add_to_group("sun_planet")
+	editing_mode = true
+	freeze_mode = RigidBody2D.FREEZE_MODE_STATIC
+	freeze = true
+	if current_size != 150:
+		current_size = 150
+		generate_grid()
+	var white_mat := ShaderMaterial.new()
+	white_mat.shader = load("res://cyanwhite.gdshader")
+	white_mat.set_shader_parameter("team_color", Color.WHITE)
+	outline_sprite.material = white_mat
+	if glow_sprite.material is ShaderMaterial:
+		glow_sprite.material.set_shader_parameter("team_color", Color.WHITE)
+	glow_sprite.modulate = Color.WHITE
+	glow_sprite.visible = true
 
 func disable_collision():
 	# Disable collision to allow the ship to pass through
@@ -316,6 +336,8 @@ func update_outline_size():
 	
 	# Show glow only if we have claimed nodes
 	glow_sprite.visible = claimed_nodes.size() > 0
+	if is_sun:
+		glow_sprite.visible = true
 	
 func update_collision_shape(radius: float):
 	var num_points = 32
