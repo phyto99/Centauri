@@ -43,18 +43,24 @@ var max_scale_factor: float = 1
 
 @export var starting_position: Vector2 = Vector2(0, 0)
 @export var moves_remaining: int = 999
+@export var editing_mode: bool = false
 
 signal moves_updated(remaining)
 signal yield_updated(count)
 
 
 func _ready():
+	if not sprite_scene:
+		set_process(false)
+		set_physics_process(false)
+		set_process_input(false)
+		return
 	add_to_group("planets")
 	position = starting_position
 	setup_collision_and_outline()
 	set_team_color(team_id)
 	setup_animation_timer()
-	center_position = Vector2.ZERO  
+	center_position = Vector2.ZERO
 	calculate_hex_order()
 	generate_grid()
 
@@ -441,6 +447,8 @@ func find_closest_hex(global_mouse_pos: Vector2) -> String:
 	return closest_key
 
 func _input(event):
+	if editing_mode:
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var global_mouse_pos = get_global_mouse_position()
 		var local_mouse_pos = to_local(global_mouse_pos)

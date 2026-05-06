@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3 uid="uid://o08jug7ssh01"]
+
+[ext_resource type="Script" path="res://mapmaker.gd" id="1_a2346"]
+[ext_resource type="PackedScene" uid="uid://cqgo47qm0s8bk" path="res://planet.tscn" id="2_ltsdg"]
+
+[node name="MapMaker" type="Node2D"]
+script = ExtResource("1_a2346")
+planet_scene = ExtResource("2_ltsdg")

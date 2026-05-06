@@ -57,6 +57,10 @@ alignment = 1
 layout_mode = 2
 text = "Start Game"
 
+[node name="MapMakerButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Mapmaker"
+
 [node name="QuitButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 text = "Quit Game"

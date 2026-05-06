@@ -1,0 +1,13 @@
+[gd_scene load_steps=5 format=3 uid="uid://cqgo47qm0s8bk"]
+
+[ext_resource type="Script" path="res://PlanetBuilder.gd" id="1_gcnjf"]
+[ext_resource type="PackedScene" uid="uid://df6olqvpfjjub" path="res://lattice_1.tscn" id="2_s1hxf"]
+[ext_resource type="PackedScene" uid="uid://buufqgcbo6boy" path="res://claim.tscn" id="3_pmuxf"]
+[ext_resource type="PackedScene" uid="uid://cer5vhye1kl8w" path="res://cultivate.tscn" id="4_fe7vg"]
+
+[node name="Planet" type="RigidBody2D"]
+script = ExtResource("1_gcnjf")
+current_size = 7
+sprite_scene = ExtResource("2_s1hxf")
+claim_stamp_scene = ExtResource("3_pmuxf")
+cultivate_stamp_scene = ExtResource("4_fe7vg")

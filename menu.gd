@@ -1,10 +1,8 @@
 extends Control
 
 func _ready():
-	# Connect the start button signal
 	$VBoxContainer/StartButton.pressed.connect(_on_start_button_pressed)
-	
-	# Connect the quit button signal
+	$VBoxContainer/MapMakerButton.pressed.connect(_on_mapmaker_button_pressed)
 	$VBoxContainer/QuitButton.pressed.connect(_on_quit_button_pressed)
 	
 	# Preload the sound effects
@@ -32,6 +30,11 @@ func _on_start_button_pressed():
 	
 	# Change to the main game scene
 	get_tree().change_scene_to_file("res://main.tscn")
+
+func _on_mapmaker_button_pressed():
+	$ButtonSound.play()
+	await $ButtonSound.finished
+	get_tree().change_scene_to_file("res://mapmaker.tscn")
 
 func _on_quit_button_pressed():
 	# Play button sound
