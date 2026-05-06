@@ -145,7 +145,7 @@ script = ExtResource("18_7idy5")
 [node name="Timer" type="Timer" parent="UI/CanvasLayer/Timebar"]
 wait_time = 15.742
 
-[node name="CollectLabel" parent="UI" instance=ExtResource("19_yvwr0")]
+[node name="CollectLabel" parent="UI/CanvasLayer" instance=ExtResource("19_yvwr0")]
 visible = false
 
 [node name="Player" parent="." instance=ExtResource("6_fa4b1")]
