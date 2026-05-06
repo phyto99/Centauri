@@ -1,31 +1,24 @@
 extends ItemList
 
-func _ready():
-	# Connect signals
-	PlanetBuilder.connect("yield_updated", _on_yield_updated)
-	PlanetBuilder.connect("food_updated", _on_food_updated)
-	PlanetBuilder.connect("dominion_updated", _on_dominion_updated)
-	PlanetBuilder.connect("diversity_updated", _on_diversity_updated)
-	PlanetBuilder.connect("efficiency_updated", _on_efficiency_updated)
-	
-	# Set initial values from PlanetBuilder
-	set_item_text(8, str(PlanetBuilder.yield_count))
-	set_item_text(12, str(PlanetBuilder.food))
-	set_item_text(13, str(PlanetBuilder.dominion))
-	set_item_text(14, str(PlanetBuilder.diversity))
-	set_item_text(15, str(round(PlanetBuilder.efficiency * 10) / 10) + "%")
+func _ready() -> void:
+	get_tree().node_added.connect(_on_node_added)
+	for planet in get_tree().get_nodes_in_group("planets"):
+		_connect_planet(planet)
+	_update_yield_total()
 
-func _on_yield_updated(count):
-	set_item_text(8, str(count))
+func _connect_planet(planet: Node) -> void:
+	if not planet.has_signal("yield_updated"):
+		return
+	if not planet.yield_updated.is_connected(_update_yield_total):
+		planet.yield_updated.connect(_update_yield_total.unbind(1))
 
-func _on_food_updated(amount):
-	set_item_text(12, str(amount))
+func _on_node_added(node: Node) -> void:
+	if node.is_in_group("planets"):
+		_connect_planet(node)
+		_update_yield_total()
 
-func _on_dominion_updated(amount):
-	set_item_text(13, str(amount))
-
-func _on_diversity_updated(amount):
-	set_item_text(14, str(amount))
-
-func _on_efficiency_updated(amount):
-	set_item_text(15, str(round(amount * 10) / 10) + "%")
+func _update_yield_total() -> void:
+	var total = 0
+	for planet in get_tree().get_nodes_in_group("planets"):
+		total += planet.yield_count
+	set_item_text(8, str(total))
