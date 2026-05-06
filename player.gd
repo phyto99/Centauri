@@ -44,7 +44,8 @@ func _ready() -> void:
 	current_fuel  = max_fuel
 	gravity_scale = 0.0
 	collision_layer = 1
-	collision_mask  = 1   # ships never physically collide with planets; Area2D handles detection
+	collision_mask  = 0   # ships pass through everything; Area2D handles planet detection
+	z_index = 10          # render above planets
 	set_team_color(team_id)
 	add_to_group("players")
 	_setup_land_detector()
@@ -55,11 +56,9 @@ func _setup_land_detector() -> void:
 	var area := Area2D.new()
 	area.collision_layer = 0
 	area.collision_mask  = 2   # detect planet bodies (layer 2)
-	var shape := CollisionShape2D.new()
-	var circle := CircleShape2D.new()
-	circle.radius = 28.0
-	shape.shape = circle
-	area.add_child(shape)
+	var poly := CollisionPolygon2D.new()
+	poly.polygon = $CollisionPolygon2D.polygon
+	area.add_child(poly)
 	add_child(area)
 	area.body_entered.connect(_on_planet_contact)
 

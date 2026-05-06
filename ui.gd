@@ -39,23 +39,39 @@ signal mode_changed(mode: String)
 var current_mode: String = "none"
 
 
+func _get_landed_planet() -> Node:
+	for ship in get_tree().get_nodes_in_group("players"):
+		var p = ship.get("landed_planet")
+		if p != null and is_instance_valid(p):
+			return p
+	return null
+
 func _on_claim_pressed():
 	if current_mode == "claim":
 		_update_button_states("none")
 	else:
 		_update_button_states("claim")
+		var p = _get_landed_planet()
+		if p:
+			p._on_claim_pressed()
 
 func _on_cultivate_pressed():
 	if current_mode == "cultivate":
 		_update_button_states("none")
 	else:
 		_update_button_states("cultivate")
+		var p = _get_landed_planet()
+		if p:
+			p._on_cultivate_pressed()
 
 func _on_collect_pressed():
 	if current_mode == "collect":
 		_update_button_states("none")
 	else:
 		_update_button_states("collect")
+		var p = _get_landed_planet()
+		if p:
+			p._on_collect_pressed()
 
 func _update_button_states(new_mode: String):
 	# Reset all buttons to normal state
