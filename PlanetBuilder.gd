@@ -45,6 +45,7 @@ var max_scale_factor: float = 1
 @export var moves_remaining: int = 999
 @export var editing_mode: bool = false
 @export var is_sun: bool = false
+@export var gravity_strength: float = 5000.0
 
 var planet_name: String = ""
 
@@ -78,25 +79,10 @@ func _ready():
 	center_position = Vector2.ZERO
 	calculate_hex_order()
 	generate_grid()
-	_setup_surface_area()
+	collision_layer = 2
+	collision_mask = 2
 	if is_sun:
 		_setup_as_sun()
-
-func _setup_surface_area() -> void:
-	surface_area = Area2D.new()
-	surface_area.collision_layer = 0
-	surface_area.collision_mask = 1   # detects ships on layer 1
-	var shape_node := CollisionShape2D.new()
-	var circle := CircleShape2D.new()
-	circle.radius = max(surface_radius, 32.0)
-	shape_node.shape = circle
-	surface_area.add_child(shape_node)
-	add_child(surface_area)
-	surface_area.body_entered.connect(_on_ship_entered)
-
-func _on_ship_entered(body: Node) -> void:
-	if body.is_in_group("players") and body.has_method("land_on_planet"):
-		body.land_on_planet(self)
 
 func _setup_as_sun() -> void:
 	add_to_group("sun_planet")
@@ -156,9 +142,18 @@ func update_stats():
 	emit_signal("efficiency_updated", efficiency)
 
 func _process(_delta):
-	# Add this: Update cell positions when the planet moves
 	update_cell_positions()
 	update_stats()
+
+func _physics_process(_delta):
+	for ship in get_tree().get_nodes_in_group("players"):
+		if not is_instance_valid(ship):
+			continue
+		var to_planet := global_position - ship.global_position
+		var dist := to_planet.length()
+		if dist < 1.0:
+			continue
+		ship.apply_central_force(to_planet.normalized() * gravity_strength / dist)
 
 func update_cell_positions():
 	# This keeps the grid aligned with the planet as it moves
@@ -171,7 +166,6 @@ func update_cell_positions():
 			cell_data["stamp"].position = cell_data["pos"]
 
 var glow_sprite: Sprite2D
-var surface_area: Area2D
 var surface_radius: float = 0.0
 
 const _TEX_DEFAULT = preload("res://planet/sapphire.svg")
