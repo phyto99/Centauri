@@ -4,13 +4,16 @@ const WIDTH        = 200.0
 const HEADER_H     = 26.0
 const MID_H        = 68.0
 const BOTTOM_H_PER_TEAM = 36.0   # height per cultivate row
-const MOUSE_OFFSET = Vector2(14.0, 14.0)
+const HEADER_MARGIN = 8.0   # left and right margin around planet name
+const MIN_WIDTH     = 120.0 # never shrink below this
 
 const GRAD_LEFT  = Color(0.133, 0.655, 0.875)
 const GRAD_RIGHT = Color(0.043, 0.365, 0.592)
 
 const MID_COLOR    = Color(0.216, 0.216, 0.216)  # #373737
 const BOTTOM_COLOR = Color(0.133, 0.133, 0.133)  # #222222
+
+const MOUSE_OFFSET = Vector2(14.0, 14.0)
 
 const CLAIM_ICON     = preload("res://UI/claim2.svg")
 const CULTIVATE_ICON = preload("res://UI/cultivatesmall.svg")
@@ -19,16 +22,20 @@ var _planet: Node = null
 var _team_color: Color = Color.WHITE
 
 var _header_mat: ShaderMaterial
+var _header_rect: ColorRect = null
 var _name_label: Label
 
 var _claims_label:       Label
 var _claims_icon:        TextureRect
 var _claims_badge_style: StyleBoxFlat = null
+var _tax_label:          Label = null
 
 # Container for the dynamic per-team cultivate badges
 var _bot_box: VBoxContainer = null
 var _bot_panel: Panel = null
 var _mid_margin: MarginContainer = null
+var _pending_unhover: Node = null
+var _last_unhovered: Node = null
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, HEADER_H + MID_H + BOTTOM_H_PER_TEAM)
@@ -49,6 +56,7 @@ func _build_ui() -> void:
 	_header_mat = _make_gradient_material(GRAD_LEFT, GRAD_RIGHT)
 	header.material = _header_mat
 	add_child(header)
+	_header_rect = header
 
 	_name_label = Label.new()
 	_name_label.text = "Planet"
@@ -59,6 +67,14 @@ func _build_ui() -> void:
 	_name_label.add_theme_font_size_override("font_size", 17)
 	_name_label.add_theme_color_override("font_color", Color.WHITE)
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var name_ls := LabelSettings.new()
+	name_ls.font_size = 17
+	var name_font := FontVariation.new()
+	name_font.base_font = ThemeDB.fallback_font
+	name_font.variation_embolden = 1.0
+	name_ls.font = name_font
+	name_ls.font_color = Color.WHITE
+	_name_label.label_settings = name_ls
 	header.add_child(_name_label)
 
 	# Mid panel — MarginContainer drives height from content, no fixed MID_H needed
@@ -114,8 +130,8 @@ func _build_ui() -> void:
 	uncol_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	uncol_margin.add_theme_constant_override("margin_left", 0)
 	uncol_margin.add_theme_constant_override("margin_right", 0)
-	uncol_margin.add_theme_constant_override("margin_top", 0)
-	uncol_margin.add_theme_constant_override("margin_bottom", 2)
+	uncol_margin.add_theme_constant_override("margin_top", 3)
+	uncol_margin.add_theme_constant_override("margin_bottom", 1)
 	mid_vbox.add_child(uncol_margin)
 
 	var uncol = Label.new()
@@ -126,8 +142,8 @@ func _build_ui() -> void:
 	uncol.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	uncol.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	var ls = LabelSettings.new()
-	ls.font_size = 15
-	ls.font_color = Color(0.5, 0.5, 0.5)
+	ls.font_size = 13
+	ls.font_color = Color(0.75, 0.75, 0.75)
 	var vf = SystemFont.new()
 	vf.font_names = PackedStringArray(["Arial", "Helvetica Neue", "Helvetica", "sans-serif"])
 	vf.font_weight = 100
@@ -178,13 +194,13 @@ func _make_tax_badge(parent: Node) -> void:
 	c.add_theme_stylebox_override("panel", style)
 	parent.add_child(c)
 
-	var lbl = Label.new()
-	lbl.text = "1:1 tax"
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", Color.WHITE)
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	c.add_child(lbl)
+	_tax_label = Label.new()
+	_tax_label.text = "5:5 tax"
+	_tax_label.add_theme_font_size_override("font_size", 18)
+	_tax_label.add_theme_color_override("font_color", Color.WHITE)
+	_tax_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_tax_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(_tax_label)
 
 func _make_claims_badge(parent: Node) -> void:
 	var c = PanelContainer.new()
@@ -223,14 +239,14 @@ func _make_claims_badge(parent: Node) -> void:
 
 	_claims_label = Label.new()
 	_claims_label.text = "x 0"
-	_claims_label.add_theme_font_size_override("font_size", 20)
+	_claims_label.add_theme_font_size_override("font_size", 18)
 	_claims_label.add_theme_color_override("font_color", Color.WHITE)
 	_claims_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_claims_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_claims_label)
 
 # Builds one cultivate badge (icon + count) for a given team color.
-func _make_cultivate_badge(team_color: Color, count: int) -> void:
+func _make_cultivate_badge(team_color: Color, count: int, suffix: String = "") -> void:
 	var hbox = HBoxContainer.new()
 	hbox.add_theme_constant_override("separation", 3)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -251,7 +267,7 @@ func _make_cultivate_badge(team_color: Color, count: int) -> void:
 	hbox.add_child(tex)
 
 	var lbl = Label.new()
-	lbl.text = "x%d" % count
+	lbl.text = "x%d%s" % [count, suffix]
 	lbl.add_theme_font_size_override("font_size", 20)
 	lbl.add_theme_color_override("font_color", team_color)
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -260,42 +276,66 @@ func _make_cultivate_badge(team_color: Color, count: int) -> void:
 
 # Clears and rebuilds all cultivate badges from current planet data.
 func _rebuild_cultivate_badges(planet: Node) -> void:
-	# Clear all previous badges
 	for child in _bot_box.get_children():
 		child.queue_free()
 
-	# Read accumulated yield per team (same source as scoreboard)
-	var team_counts: Dictionary = {}
-	var team_yield_counts = planet.get("team_yield_counts")
-	if team_yield_counts:
-		for tid in team_yield_counts:
-			var val: int = team_yield_counts[tid]
-			if val > 0:
-				team_counts[tid] = val
+	var tyc        = planet.get("team_yield_counts")
+	var ttp        = planet.get("team_tax_paid")
+	var tte        = planet.get("team_tax_earned")
+	var dom_id: int = planet.get("dominant_team_id") if planet.get("dominant_team_id") != null else -1
+	var colors     = planet.get("team_colors")
 
-	var row_count: int = max(1, team_counts.size())
-	var bot_h: float = BOTTOM_H_PER_TEAM * row_count
+	var row_count := 0
 
-	# Resize bottom panel and reposition below the dynamic mid section
-	_bot_panel.size = Vector2(WIDTH, bot_h)
-	var mid_bottom: float = HEADER_H + (_mid_margin.size.y if _mid_margin else MID_H)
-	_bot_panel.position.y = mid_bottom
-	custom_minimum_size = Vector2(WIDTH, mid_bottom + bot_h)
+	# Dominant team always first
+	if dom_id >= 0:
+		var col := Color.WHITE
+		if colors and colors.size() > 0:
+			col = colors[dom_id % colors.size()]
+		var gross: int = int(tyc.get(dom_id, 0)) if tyc else 0
+		var paid: int  = int(ttp.get(dom_id, 0.0)) if ttp else 0
+		var net: int   = max(0, gross - paid)
+		if net > 0:
+			_make_cultivate_badge(col, net)
+			row_count += 1
+		var earned := int(tte.get(dom_id, 0.0)) if tte else 0
+		if earned > 0:
+			_make_cultivate_badge(col, earned, " in tax")
+			row_count += 1
 
-	if team_counts.is_empty():
-		# Placeholder row when no yield yet
-		_make_cultivate_badge(Color.WHITE, 0)
-		return
+	# Other teams sorted by gross yield descending, only show if net > 0
+	var others: Array = []
+	if tyc:
+		for tid in tyc:
+			if tid == dom_id:
+				continue
+			var gross := int(tyc.get(tid, 0))
+			if gross > 0:
+				others.append([tid, gross])
+	others.sort_custom(func(a, b): return a[1] > b[1])
 
-	var colors = planet.get("team_colors")
-	var sorted_tids: Array = team_counts.keys()
-	sorted_tids.sort()
-
-	for tid in sorted_tids:
-		var col: Color = Color.WHITE
+	for entry in others:
+		var tid: int = entry[0]
+		var col := Color.WHITE
 		if colors and colors.size() > 0:
 			col = colors[tid % colors.size()]
-		_make_cultivate_badge(col, team_counts[tid])
+		var gross: int = entry[1]
+		var paid: int  = int(ttp.get(tid, 0.0)) if ttp else 0
+		var net: int   = max(0, gross - paid)
+		if net > 0:
+			_make_cultivate_badge(col, net)
+			row_count += 1
+
+	if row_count == 0:
+		_make_cultivate_badge(Color.WHITE, 0)
+		row_count = 1
+
+	var cur_w: float = custom_minimum_size.x if custom_minimum_size.x > 0 else WIDTH
+	var bot_h: float = BOTTOM_H_PER_TEAM * row_count
+	_bot_panel.size = Vector2(cur_w, bot_h)
+	var mid_bottom: float = HEADER_H + (_mid_margin.size.y if _mid_margin else MID_H)
+	_bot_panel.position.y = mid_bottom
+	custom_minimum_size = Vector2(cur_w, mid_bottom + bot_h)
 
 # ── PANEL / SHADER HELPERS ────────────────────────────────────────────────────
 
@@ -303,7 +343,8 @@ func _on_mid_resized() -> void:
 	if _bot_panel and _mid_margin:
 		var mid_bottom := HEADER_H + _mid_margin.size.y
 		_bot_panel.position.y = mid_bottom
-		custom_minimum_size = Vector2(WIDTH, mid_bottom + _bot_panel.size.y)
+		var cur_w: float = custom_minimum_size.x if custom_minimum_size.x > 0 else WIDTH
+		custom_minimum_size = Vector2(cur_w, mid_bottom + _bot_panel.size.y)
 
 func _make_panel(color: Color, pos: Vector2, sz: Vector2) -> Panel:
 	var p = Panel.new()
@@ -363,27 +404,59 @@ func _connect_planet(planet: Node) -> void:
 # ── HOVER HANDLERS ────────────────────────────────────────────────────────────
 
 func _on_planet_hovered(planet: Node) -> void:
-	if _planet and _planet != planet and _planet.has_signal("yield_updated"):
-		if _planet.yield_updated.is_connected(_on_yield_updated):
+	if _planet and _planet != planet:
+		if _planet.has_signal("yield_updated") and _planet.yield_updated.is_connected(_on_yield_updated):
 			_planet.yield_updated.disconnect(_on_yield_updated)
+		if _planet.has_signal("tax_updated") and _planet.tax_updated.is_connected(_on_tax_updated):
+			_planet.tax_updated.disconnect(_on_tax_updated)
 
 	_planet = planet
 
 	_name_label.text = "Planet " + planet.planet_name if planet.get("planet_name") else "Planet"
+	_resize_to_name()
 
 	_refresh_claims(planet)
+	_refresh_tax_badge(planet)
 	_rebuild_cultivate_badges(planet)
 
 	if planet.has_signal("yield_updated") and not planet.yield_updated.is_connected(_on_yield_updated):
 		planet.yield_updated.connect(_on_yield_updated)
+	if planet.has_signal("tax_updated") and not planet.tax_updated.is_connected(_on_tax_updated):
+		planet.tax_updated.connect(_on_tax_updated)
 
 	show()
 	set_process(true)
 
 func _on_planet_unhovered() -> void:
-	if _planet and _planet.has_signal("yield_updated"):
-		if _planet.yield_updated.is_connected(_on_yield_updated):
+	# Only hide if the planet that fired unhovered is still the one we're showing.
+	# This prevents the race where unhovered fires after the next planet's hovered.
+	# We can't know which planet fired, so we check on next frame.
+	_last_unhovered = _planet
+	call_deferred("_check_still_hovered")
+
+func _check_still_hovered() -> void:
+	# If _planet is still set, a new hovered signal already claimed it — keep showing.
+	# If _planet is null, nothing claimed it — already hidden.
+	# We only need to hide if _planet is set but the mouse has genuinely left.
+	# Since _on_planet_hovered sets _planet immediately when entering a new planet,
+	# by the time this deferred call runs, _planet will be the new planet (not null).
+	# So we only hide if _planet is still the same planet that triggered unhovered,
+	# which we track via _last_unhovered.
+	if _planet != null and _planet == _last_unhovered:
+		if _planet.has_signal("yield_updated") and _planet.yield_updated.is_connected(_on_yield_updated):
 			_planet.yield_updated.disconnect(_on_yield_updated)
+		if _planet.has_signal("tax_updated") and _planet.tax_updated.is_connected(_on_tax_updated):
+			_planet.tax_updated.disconnect(_on_tax_updated)
+		_planet = null
+		hide()
+	_last_unhovered = null
+
+func _do_hide() -> void:
+	if _planet:
+		if _planet.has_signal("yield_updated") and _planet.yield_updated.is_connected(_on_yield_updated):
+			_planet.yield_updated.disconnect(_on_yield_updated)
+		if _planet.has_signal("tax_updated") and _planet.tax_updated.is_connected(_on_tax_updated):
+			_planet.tax_updated.disconnect(_on_tax_updated)
 	_planet = null
 	hide()
 	set_process(false)
@@ -392,9 +465,33 @@ func _on_yield_updated(_count: int) -> void:
 	if _planet:
 		_rebuild_cultivate_badges(_planet)
 
+func _on_tax_updated() -> void:
+	if _planet:
+		_refresh_tax_badge(_planet)
+		_rebuild_cultivate_badges(_planet)
+
 func _on_moves_updated(_remaining: int) -> void:
 	if _planet:
 		_refresh_claims(_planet)
+
+static func _gcd(a: int, b: int) -> int:
+	while b != 0:
+		var t := b
+		b = a % b
+		a = t
+	return a
+
+func _refresh_tax_badge(planet: Node) -> void:
+	if not _tax_label:
+		return
+	var dom_id: int = planet.get("dominant_team_id") if planet.get("dominant_team_id") != null else -1
+	if dom_id < 0:
+		_tax_label.text = "no tax"
+	else:
+		var rate: int = planet.get("tax_rate") if planet.get("tax_rate") != null else 5
+		var other := 10 - rate
+		var g := _gcd(rate, other)
+		_tax_label.text = "%d:%d tax" % [rate / g, other / g]
 
 # ── PROCESS ───────────────────────────────────────────────────────────────────
 
@@ -402,6 +499,31 @@ func _process(_delta: float) -> void:
 	global_position = get_global_mouse_position() + MOUSE_OFFSET
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
+
+# Resize all panels to fit the planet name text width.
+func _resize_to_name() -> void:
+	if not _name_label or not _name_label.label_settings:
+		return
+	var font: Font = _name_label.label_settings.font if _name_label.label_settings.font else ThemeDB.fallback_font
+	var font_size: int = _name_label.label_settings.font_size
+	var text_w: float = font.get_string_size(_name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	var new_width: float = maxf(MIN_WIDTH, text_w + HEADER_MARGIN * 2.0)
+
+	# Resize header
+	if _header_rect:
+		_header_rect.size.x = new_width
+	# Resize name label to match
+	_name_label.offset_right = new_width - HEADER_MARGIN
+
+	# Resize mid margin
+	if _mid_margin:
+		_mid_margin.size.x = new_width
+
+	# Resize bot panel
+	if _bot_panel:
+		_bot_panel.size.x = new_width
+
+	custom_minimum_size.x = new_width
 
 func _refresh_claims(planet: Node) -> void:
 	var team_counts: Dictionary = {}

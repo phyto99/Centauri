@@ -35,7 +35,7 @@ func spawn_players() -> void:
 	for i in range(player_count):
 		var angle := (existing.size() + i) * TAU / total - PI / 2.0
 		var p := player_scene.instantiate()
-		p.team_id = existing.size() + i
+		p.team_id = i
 		add_child(p)
 		p.global_position = sun.global_position + Vector2.from_angle(angle) * spawn_r
 		p.rotation = angle

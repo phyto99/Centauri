@@ -151,8 +151,6 @@ wait_time = 15.742
 [node name="CollectLabel" parent="UI/CanvasLayer" instance=ExtResource("19_yvwr0")]
 visible = false
 
-[node name="Player" parent="." instance=ExtResource("6_fa4b1")]
-
 [node name="ButtonControl" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 0

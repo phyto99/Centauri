@@ -74,6 +74,15 @@ func _get_team_inventory(tid: int) -> int:
 			total += int(ship.get("food_amount") if ship.get("food_amount") != null else 0)
 	return total
 
+# Number of distinct foreign teams whose taxed crops this team has delivered.
+func _get_team_diversity(tid: int) -> int:
+	for ship in get_tree().get_nodes_in_group("players"):
+		if ship.get("team_id") == tid:
+			var dt = ship.get("diversity_teams")
+			if dt != null:
+				return (dt as Array).size()
+	return 0
+
 # Sum of total_food_delivered across all players on this team.
 func _get_team_delivered(tid: int) -> int:
 	var total := 0
@@ -82,10 +91,21 @@ func _get_team_delivered(tid: int) -> int:
 			total += int(ship.get("total_food_delivered") if ship.get("total_food_delivered") != null else 0)
 	return total
 
+# Relative food score: leader = 100, others = their_delivered / leader * 100.
+func _get_food_score(tid: int, team_count: int) -> int:
+	var max_delivered := 0
+	for t in range(team_count):
+		var d: int = _team_delivered.get(t, 0)
+		if d > max_delivered:
+			max_delivered = d
+	if max_delivered <= 0:
+		return 0
+	return clampi(int(float(_team_delivered.get(tid, 0)) / float(max_delivered) * 100.0), 0, 100)
+
 # food delivered / yield grown × 100, clamped 0-100.
 func _get_efficiency(tid: int) -> int:
 	var grown: int = _team_yield.get(tid, 0)
-	var delivered: int = _get_team_delivered(tid)
+	var delivered: int = _team_delivered.get(tid, 0)
 	if grown <= 0:
 		return 0
 	return clampi(int(float(delivered) / float(grown) * 100.0), 0, 100)
@@ -175,15 +195,21 @@ func _rebuild_team_rows() -> void:
 		var color: Color = _team_color(t)
 		var bg: Color    = Color(color.r, color.g, color.b, 0.25)
 
+		var food_score:  int = _get_food_score(t, team_count)
+		var diversity:   int = _get_team_diversity(t)
+		var dominion:    int = _get_dominion(t)
+		var efficiency:  int = _get_efficiency(t)
+		var total:       int = food_score + diversity + dominion + efficiency
+
 		var values: Array = [
-			str(_team_yield.get(t, 0)),        # col 0: crops growing (yield)
-			str(_get_team_inventory(t)),        # col 1: crops in inventory (live)
-			str(_get_team_delivered(t)),        # col 2: crops delivered to sun
-			"0",                                # col 3: food (not yet defined)
-			"0",                                # col 4: diversity (not yet defined)
-			str(_get_dominion(t)),              # col 5: dominion (planets owned)
-			str(_get_efficiency(t)),            # col 6: efficiency %
-			"0",                                # col 7: Total (not yet defined)
+			str(_team_yield.get(t, 0)),   # col 0: crops growing (yield)
+			str(_get_team_inventory(t)),  # col 1: crops in inventory (live)
+			str(_team_delivered.get(t, 0)), # col 2: crops delivered to sun
+			str(food_score),              # col 3: relative food score (leader=100)
+			str(diversity),               # col 4: diversity
+			str(dominion),                # col 5: dominion (planets owned)
+			str(efficiency),              # col 6: efficiency %
+			str(total),                   # col 7: Total (sum of cols 3-6)
 		]
 
 		for col_idx in range(_MAX_COLUMNS):

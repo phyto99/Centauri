@@ -24,6 +24,8 @@ var state        := IDLE
 var current_fuel: float = 0.0
 var food_amount:  float = 0.0
 var total_food_delivered: int = 0
+var food_by_source: Dictionary = {}  # source_team_id → float
+var diversity_teams: Array = []       # foreign team_ids whose crops we've delivered
 
 # Landing state
 var landed_planet: Node = null
@@ -76,6 +78,11 @@ func _on_planet_contact(body: Node) -> void:
 	# Deliver food to sun on contact — zero inventory instantly
 	if body.get("is_sun") and food_amount > 0.0:
 		var delivered := roundi(food_amount)
+		for source in food_by_source:
+			if source != team_id and food_by_source[source] > 0.0:
+				if not diversity_teams.has(source):
+					diversity_teams.append(source)
+		food_by_source.clear()
 		food_amount = 0.0
 		total_food_delivered += delivered
 		emit_signal("food_delivered", team_id, delivered)
@@ -83,6 +90,8 @@ func _on_planet_contact(body: Node) -> void:
 	landed_planet = body
 	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
+	if body.has_method("set_player_landed"):
+		body.set_player_landed(true)
 
 func _detach() -> void:
 	if landed_planet == null:
@@ -92,6 +101,8 @@ func _detach() -> void:
 	var current_angle: float = landing_offset.angle() + rot_delta
 	var tangential: Vector2 = Vector2.from_angle(current_angle + PI / 2.0) * landed_planet.angular_velocity * r
 	linear_velocity = landed_planet.linear_velocity + tangential
+	if landed_planet.has_method("set_player_landed"):
+		landed_planet.set_player_landed(false)
 	landed_planet = null
 
 func set_team_color(id: int) -> void:
@@ -141,9 +152,15 @@ func update_fuel_bar() -> void:
 		fuel_bar.size.x = 366.0 * (current_fuel / max_fuel)
 		fuel_bar.color   = Color(0, 1, 1)
 
-func collect_food(amount: float) -> void:
+func add_food_from_source(amount: float, source_team: int) -> void:
+	if amount <= 0.0:
+		return
+	food_by_source[source_team] = food_by_source.get(source_team, 0.0) + amount
 	food_amount += amount
 	emit_signal("food_inventory_changed", team_id)
+
+func collect_food(amount: float) -> void:
+	add_food_from_source(amount, team_id)
 
 func _process(delta: float) -> void:
 	get_input()

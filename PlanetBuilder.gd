@@ -52,6 +52,7 @@ var planet_name: String = ""
 signal moves_updated(remaining)
 signal yield_updated(count)
 signal team_yield_updated(team_id: int, count: int)
+signal tax_updated
 signal planet_hovered(planet: Node)
 signal planet_unhovered
 
@@ -173,6 +174,11 @@ var surface_radius: float = 0.0
 
 const _TEX_DEFAULT = preload("res://planet/sapphire.svg")
 const _TEX_HOVER   = preload("res://planet/sapphire-open.svg")
+
+func set_player_landed(landed: bool) -> void:
+	if is_sun:
+		return
+	outline_sprite.texture = _TEX_HOVER if landed else _TEX_DEFAULT
 
 func setup_collision_and_outline():
 	collision_shape = CollisionPolygon2D.new()
@@ -555,8 +561,20 @@ func _input(event):
 			return
 
 		var current_cell_state = grid[closest_hex].get("state", CellState.UNCLAIMED)
-		if current_cell_state == current_action:
-			return
+		var current_cell_team: int = grid[closest_hex].get("team_id", -1)
+
+		if current_action == CellState.CULTIVATED:
+			# Cultivate only lands on empty cells
+			if current_cell_state != CellState.UNCLAIMED:
+				return
+		elif current_action == CellState.CLAIMED:
+			# Can't re-claim your own cell
+			if current_cell_state == CellState.CLAIMED and current_cell_team == acting_player.team_id:
+				return
+			# Can't claim over a cultivate that's locked in a triangle
+			if current_cell_state == CellState.CULTIVATED and _is_in_triangle(closest_hex):
+				return
+
 		if moves_remaining <= 0:
 			return
 
@@ -576,6 +594,14 @@ func _input(event):
 
 		if current_action == CellState.CULTIVATED:
 			check_for_triangles()
+		elif current_action == CellState.CLAIMED:
+			var new_dominant := _get_dominant_team_id()
+			if new_dominant != dominant_team_id:
+				dominant_team_id = new_dominant
+				tax_rate = 5
+				var popup := _get_or_create_tax_popup()
+				if popup:
+					popup.open(self)
 
 		queue_redraw()
 
@@ -612,6 +638,11 @@ func setup_animation_timer():
 
 var yield_count: int = 0
 var team_yield_counts: Dictionary = {}
+var dominant_team_id: int = -1
+var tax_rate: int = 5
+var team_tax_paid: Dictionary = {}
+var team_tax_earned: Dictionary = {}
+var team_tax_earned_per_source: Dictionary = {}  # dominant_tid → {source_tid → float}
 
 func _on_animation_timer_timeout():
 	var current_time = Time.get_ticks_msec() / 1000.0
@@ -638,6 +669,15 @@ func _on_animation_timer_timeout():
 						var cell_team = cell_data.get("team_id", team_id)
 						team_yield_counts[cell_team] = team_yield_counts.get(cell_team, 0) + 1
 						emit_signal("team_yield_updated", cell_team, team_yield_counts[cell_team])
+						if dominant_team_id >= 0 and cell_team != dominant_team_id:
+							var tax := tax_rate / 10.0
+							team_tax_paid[cell_team] = team_tax_paid.get(cell_team, 0.0) + tax
+							team_tax_earned[dominant_team_id] = team_tax_earned.get(dominant_team_id, 0.0) + tax
+							if not team_tax_earned_per_source.has(dominant_team_id):
+								team_tax_earned_per_source[dominant_team_id] = {}
+							var tes: Dictionary = team_tax_earned_per_source[dominant_team_id]
+							tes[cell_team] = tes.get(cell_team, 0.0) + tax
+							emit_signal("tax_updated")
 					
 					# Store current progress for next frame comparison
 					cell_data["last_progress"] = progress
@@ -745,9 +785,8 @@ func _set_glow_color(color: Color) -> void:
 	if glow_sprite.material is ShaderMaterial:
 		glow_sprite.material.set_shader_parameter("team_color", color)
 
-func _get_dominant_claim_color() -> Color:
+func _get_dominant_team_id() -> int:
 	var counts: Dictionary = {}
-	var first_team: int = -1
 	for key in claimed_nodes:
 		if not grid.has(key):
 			continue
@@ -755,18 +794,32 @@ func _get_dominant_claim_color() -> Color:
 		if cell.get("state", 0) != CellState.CLAIMED:
 			continue
 		var tid: int = cell.get("team_id", 0)
-		if first_team == -1:
-			first_team = tid
 		counts[tid] = counts.get(tid, 0) + 1
 	if counts.is_empty():
-		return team_colors[team_id % team_colors.size()]
-	var best_tid: int = first_team
-	var best_count: int = -1
+		return -1
+	var best_tid := -1
+	var best_count := -1
 	for tid in counts:
 		if counts[tid] > best_count:
 			best_count = counts[tid]
 			best_tid = tid
-	return team_colors[best_tid % team_colors.size()]
+	return best_tid
+
+func _get_dominant_claim_color() -> Color:
+	var tid := _get_dominant_team_id()
+	if tid < 0:
+		return team_colors[team_id % team_colors.size()]
+	return team_colors[tid % team_colors.size()]
+
+const _TAX_POPUP_SCENE := preload("res://tax_popup.tscn")
+
+func _get_or_create_tax_popup() -> Node:
+	var existing := get_tree().get_root().find_child("TaxPopup", true, false)
+	if existing:
+		return existing
+	var popup := _TAX_POPUP_SCENE.instantiate()
+	get_tree().get_root().add_child(popup)
+	return popup
 
 func _tint_sprite(node: Node, color: Color) -> void:
 	if not node is Sprite2D:
@@ -874,6 +927,12 @@ func cache_adjacent_cells():
 			if grid.has(adj_key):
 				adjacency_cache[key].append(adj_key)
 
+func _is_in_triangle(hex_key: String) -> bool:
+	for triangle in triangles:
+		if hex_key in triangle:
+			return true
+	return false
+
 func check_for_triangles():
 	triangles.clear()
 	var cultivated_cells = []
@@ -943,38 +1002,75 @@ func _on_cultivate_pressed() -> void:
 	current_action = CellState.CULTIVATED
 
 func _on_collect_pressed() -> void:
-	if not _has_landed_player():
+	var player := _get_active_landed_player()
+	if not player:
 		return
-	if yield_count <= 0:
+	var tid: int = player.team_id
+	var own_net: int = max(0, team_yield_counts.get(tid, 0) - int(team_tax_paid.get(tid, 0.0)))
+	var tax_earned: int = int(team_tax_earned.get(tid, 0.0))
+	var available: int = own_net + tax_earned
+	if available <= 0:
 		return
-	var cl = get_tree().get_root().find_child("CollectLabel", true, false)
+	var cl := get_tree().get_root().find_child("CollectLabel", true, false)
 	if not cl:
 		return
 	if not cl.confirmed.is_connected(_on_collect_confirmed):
 		cl.confirmed.connect(_on_collect_confirmed)
-	cl.open(yield_count)
+	cl.open(available)
 
 func _on_collect_confirmed(food_amount: int, fuel_amount: int) -> void:
 	var player := _get_active_landed_player()
-	if player:
-		if food_amount > 0:
-			player.collect_food(float(food_amount))
-		if fuel_amount > 0:
-			player.current_fuel = min(player.max_fuel, player.current_fuel + float(fuel_amount))
+	if not player:
+		return
+	var tid: int = player.team_id
+
+	var own_net: int = max(0, team_yield_counts.get(tid, 0) - int(team_tax_paid.get(tid, 0.0)))
+	var tax_earned: int = int(team_tax_earned.get(tid, 0.0))
+	var total_available: int = own_net + tax_earned
+	if total_available <= 0:
+		return
+
+	if fuel_amount > 0:
+		player.current_fuel = min(player.max_fuel, player.current_fuel + float(fuel_amount))
+
+	if food_amount > 0:
+		var own_frac := float(own_net) / float(total_available)
+		var food_own: int = int(float(food_amount) * own_frac)
+		var food_tax: int = food_amount - food_own
+		if food_own > 0:
+			player.add_food_from_source(float(food_own), tid)
+		if food_tax > 0:
+			_distribute_tax_food(player, tid, float(food_tax))
 
 	total_yield_collected += food_amount + fuel_amount
 
-	# Reset per-team yield on this planet and notify scoreboard
-	var affected_teams: Array = team_yield_counts.keys()
-	team_yield_counts.clear()
+	# Clear only this team's data; other teams' crops stay on planet
+	team_yield_counts.erase(tid)
+	team_tax_paid.erase(tid)
+	team_tax_earned.erase(tid)
+	team_tax_earned_per_source.erase(tid)
+
 	yield_count = 0
+	for t in team_yield_counts:
+		yield_count += team_yield_counts[t]
 
 	moves_remaining -= 1
 	emit_signal("moves_updated", moves_remaining)
 	emit_signal("yield_updated", yield_count)
-	for tid in affected_teams:
-		emit_signal("team_yield_updated", tid, 0)
+	emit_signal("team_yield_updated", tid, 0)
+	emit_signal("tax_updated")
 	update_stats()
+
+func _distribute_tax_food(player: Node, dom_tid: int, amount: float) -> void:
+	var per_source: Dictionary = team_tax_earned_per_source.get(dom_tid, {})
+	var total_tax: float = team_tax_earned.get(dom_tid, 0.0)
+	if per_source.is_empty() or total_tax <= 0.0:
+		player.add_food_from_source(amount, dom_tid)
+		return
+	for source_team in per_source:
+		var portion: float = amount * (float(per_source[source_team]) / total_tax)
+		if portion > 0.0:
+			player.add_food_from_source(portion, source_team)
 
 
 

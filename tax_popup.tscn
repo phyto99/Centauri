@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://tax_popup"]
+
+[ext_resource type="Script" path="res://tax_popup.gd" id="1"]
+
+[node name="TaxPopup" type="CanvasLayer"]
+script = ExtResource("1")
