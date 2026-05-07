@@ -52,6 +52,8 @@ func _ready() -> void:
 	if not is_instance_valid(fuel_bar):
 		_create_fuel_bar()
 
+signal food_delivered(team_id: int, amount: int)
+
 func _setup_land_detector() -> void:
 	var area := Area2D.new()
 	area.collision_layer = 0
@@ -69,6 +71,11 @@ func _on_planet_contact(body: Node) -> void:
 		return
 	if Input.is_action_pressed("thrust"):
 		return
+	# Deliver food to sun on contact
+	if body.get("is_sun") and food_amount > 0.0:
+		var delivered := int(food_amount)
+		food_amount = 0.0
+		emit_signal("food_delivered", team_id, delivered)
 	landed_planet = body
 	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
