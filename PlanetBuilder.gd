@@ -51,6 +51,7 @@ var planet_name: String = ""
 
 signal moves_updated(remaining)
 signal yield_updated(count)
+signal team_yield_updated(team_id: int, count: int)
 signal planet_hovered(planet: Node)
 signal planet_unhovered
 
@@ -384,36 +385,42 @@ func _draw():
 		var current_scale = calculate_current_scale()
 		var line_width = 8.0 * current_scale
 		
-		# Draw lines for each cell
-		for key1 in grid.keys():
-			var pos1 = grid[key1]["cell"].position
-			for key2 in grid.keys():
-				if key1 != key2 and is_adjacent(grid[key1], grid[key2]):
-					var pos2 = grid[key2]["cell"].position
-					
-					# Calculate midpoint between cells
-					var direction = (pos2 - pos1).normalized()
-					var distance = pos1.distance_to(pos2)
-					var half_distance = distance * 0.30
-					
-					# Calculate start and end points for the line segment
-					var start_point = pos1 + (direction * half_distance)
-					var end_point = pos1 + (direction * (distance - half_distance))
-					
-					# Draw the shortened line
-					draw_line(start_point, end_point, Color.WHITE, line_width)
-		
-		# Draw triangles only for cultivated cell groups
+		# Draw triangles first so grid lines render on top
 		for triangle in triangles:
 			var points = PackedVector2Array([
 				grid[triangle[0]]["cell"].position,
 				grid[triangle[1]]["cell"].position,
 				grid[triangle[2]]["cell"].position
 			])
-			var alpha = clamp(0.5 * current_scale, 0.2, 0.5)  #Don't know what this does
-			# You can customize the triangle color here
-			draw_colored_polygon(points, Color(0, 1, 0.5, alpha)) 
-		
+			var alpha = clamp(0.5 * current_scale, 0.2, 0.5)
+			var tri_team = grid[triangle[0]].get("team_id", team_id)
+			var tri_color = team_colors[tri_team % team_colors.size()]
+			draw_colored_polygon(points, Color(tri_color.r, tri_color.g, tri_color.b, alpha))
+
+		# Draw grid lines on top of triangles
+		for key1 in grid.keys():
+			var pos1 = grid[key1]["cell"].position
+			for key2 in grid.keys():
+				if key1 != key2 and is_adjacent(grid[key1], grid[key2]):
+					var pos2 = grid[key2]["cell"].position
+					var direction = (pos2 - pos1).normalized()
+					var distance = pos1.distance_to(pos2)
+					var half_distance = distance * 0.30
+					var start_point = pos1 + (direction * half_distance)
+					var end_point = pos1 + (direction * (distance - half_distance))
+					draw_line(start_point, end_point, Color.WHITE, line_width)
+
+		# Black filled circles — same size as lattice1 sprite, above lines, below cell sprites
+		var cell_radius := 0.0
+		for k in grid.keys():
+			var cn = grid[k]["cell"]
+			if cn is Sprite2D and cn.texture:
+				cell_radius = cn.texture.get_size().x * 0.5 * cn.scale.x
+				break
+		if cell_radius > 0.0:
+			for k in grid.keys():
+				draw_circle(grid[k]["cell"].position, cell_radius, Color.BLACK)
+
 		# Draw coordinates if needed
 		var font_size = 16.0 * current_scale
 		for key in grid.keys():
@@ -500,53 +507,77 @@ func _has_landed_player() -> bool:
 			return true
 	return false
 
+func _get_active_landed_player() -> Node:
+	# Prefer the player whose camera is active
+	for ship in get_tree().get_nodes_in_group("players"):
+		if not is_instance_valid(ship):
+			continue
+		if ship.get("landed_planet") != self:
+			continue
+		var cam = ship.get_node_or_null("Camera2D")
+		if cam and cam.enabled:
+			return ship
+	# Fallback: any landed player
+	for ship in get_tree().get_nodes_in_group("players"):
+		if is_instance_valid(ship) and ship.get("landed_planet") == self:
+			return ship
+	return null
+
 func _input(event):
 	if editing_mode:
 		return
-	if not _has_landed_player():
+	# Only the camera-active player landing on THIS planet may act
+	var acting_player: Node = null
+	for ship in get_tree().get_nodes_in_group("players"):
+		if not is_instance_valid(ship):
+			continue
+		if ship.get("landed_planet") != self:
+			continue
+		var cam = ship.get_node_or_null("Camera2D")
+		if cam and cam.enabled:
+			acting_player = ship
+			break
+	if acting_player == null:
 		return
+
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var global_mouse_pos = get_global_mouse_position()
 		var local_mouse_pos = to_local(global_mouse_pos)
-		
-		# Quick check if the click is within the collision shape's bounding box
+
 		var rect = Rect2(collision_shape.polygon[0], Vector2.ZERO)
 		for point in collision_shape.polygon:
 			rect = rect.expand(point)
-		
 		if not rect.has_point(local_mouse_pos):
 			return
-			
-		# Find the closest hex
+
 		var closest_hex = find_closest_hex(global_mouse_pos)
-		
-		if closest_hex != "":
-			# Invalid move: cell already has the same state as current action
-			var current_cell_state = grid[closest_hex].get("state", CellState.UNCLAIMED)
-			if current_cell_state == current_action:
-				return
+		if closest_hex == "":
+			return
 
-			# Check if we have moves remaining
-			if moves_remaining <= 0:
-				return  # No moves left, exit the function
+		var current_cell_state = grid[closest_hex].get("state", CellState.UNCLAIMED)
+		if current_cell_state == current_action:
+			return
+		if moves_remaining <= 0:
+			return
 
-			# Decrement moves remaining
-			moves_remaining -= 1
-			emit_signal("moves_updated", moves_remaining)
+		# Lock in team and action from the active player before any mutation
+		team_id = acting_player.team_id
 
-			if not closest_hex in claimed_nodes:
-				claimed_nodes.append(closest_hex)
-			
-			place_sprite_and_fill(Vector2(
-				float(closest_hex.split(",")[0]),
-				float(closest_hex.split(",")[1])
-			))
-			
-			# Only check triangles if we're in cultivated mode
-			if current_action == CellState.CULTIVATED:
-				check_for_triangles()
-			
-			queue_redraw()
+		moves_remaining -= 1
+		emit_signal("moves_updated", moves_remaining)
+
+		if not closest_hex in claimed_nodes:
+			claimed_nodes.append(closest_hex)
+
+		place_sprite_and_fill(Vector2(
+			float(closest_hex.split(",")[0]),
+			float(closest_hex.split(",")[1])
+		))
+
+		if current_action == CellState.CULTIVATED:
+			check_for_triangles()
+
+		queue_redraw()
 
 # Add point in polygon test function
 func is_point_in_polygon(point: Vector2, polygon: PackedVector2Array) -> bool:
@@ -580,6 +611,8 @@ func setup_animation_timer():
 	animation_timer.start()
 
 var yield_count: int = 0
+var team_yield_counts: Dictionary = {}
+
 func _on_animation_timer_timeout():
 	var current_time = Time.get_ticks_msec() / 1000.0
 	
@@ -602,15 +635,21 @@ func _on_animation_timer_timeout():
 						# Animation completed a cycle, increment yield
 						yield_count += 1
 						emit_signal("yield_updated", yield_count)
+						var cell_team = cell_data.get("team_id", team_id)
+						team_yield_counts[cell_team] = team_yield_counts.get(cell_team, 0) + 1
+						emit_signal("team_yield_updated", cell_team, team_yield_counts[cell_team])
 					
 					# Store current progress for next frame comparison
 					cell_data["last_progress"] = progress
 					
-					# Apply team color to overlay sprite as well
-					var team_color = team_colors[cell_data.get("team_id", team_id) % team_colors.size()]
+					# Shader handles color; update param each frame in case team changed
+					var cell_team_id = cell_data.get("team_id", team_id)
+					var cell_team_color = team_colors[cell_team_id % team_colors.size()]
+					if overlay_sprite.material is ShaderMaterial:
+						overlay_sprite.material.set_shader_parameter("team_color", cell_team_color)
 					overlay_sprite.visible = true
 					overlay_sprite.scale = Vector2.ONE
-					overlay_sprite.modulate = Color(team_color.r, team_color.g, team_color.b, 0.7)
+					overlay_sprite.modulate = Color(1, 1, 1, 0.7)
 					
 					# Animate main sprite (scale from 0% to 100% and reset)
 					var scale_factor = lerp(0.01, 1.0, progress)
@@ -623,10 +662,13 @@ func _on_animation_timer_timeout():
 #var team_color = get_node("CameraController").team_color
 var team_id = 0  # Default team ID
 var team_colors = [
-	Color(0, 1, 1, 1),  # Cyan
-	Color(1, 0, 1, 1),  # Magenta
-	Color(1, 1, 0, 1),  # Yellow
-	Color(1, 0, 0, 1)   # Red
+	Color(0, 1, 1, 1),      # Cyan     (team 0)
+	Color(1, 0, 1, 1),      # Magenta  (team 1)
+	Color(0, 1, 0, 1),      # Lime     (team 2)
+	Color(1, 1, 0, 1),      # Yellow   (team 3)
+	Color(0, 0, 1, 1),      # Blue     (team 4)
+	Color(1, 0, 0, 1),      # Red      (team 5)
+	Color(0, 0.5, 0, 1),    # DkGreen  (team 6)
 ]
 func set_team_color(id):
 	team_id = id
@@ -666,14 +708,11 @@ func place_sprite_and_fill(grid_coords: Vector2):
 	if current_action == CellState.CULTIVATED:
 		var main_sprite = stamp.get_child(0)
 		var overlay_sprite = stamp.get_child(1)
-		
-		# Use team color with transparency for cultivated state
-		var team_color = team_colors[team_id % team_colors.size()]
-		main_sprite.modulate = Color(team_color.r, team_color.g, team_color.b, 0.5)
+		# Shader handles RGB — modulate controls alpha only
+		main_sprite.modulate = Color(1, 1, 1, 0.5)
 		main_sprite.scale = Vector2.ONE * 0.01
-		
 		overlay_sprite.visible = true
-		overlay_sprite.modulate = Color(team_color.r, team_color.g, team_color.b, 0.7)  # Apply team color here
+		overlay_sprite.modulate = Color(1, 1, 1, 0.7)
 		overlay_sprite.scale = Vector2.ONE
 		
 		cell_data["animation_start_time"] = Time.get_ticks_msec() / 1000.0
@@ -697,32 +736,54 @@ func place_sprite_and_fill(grid_coords: Vector2):
 	
 	# Only show glow if there are claimed (not cultivated) cells
 	glow_sprite.visible = has_claimed_cells
-	
-	# Apply team color to glow sprite as well
+
 	if glow_sprite.visible:
-		glow_sprite.modulate = team_colors[team_id % team_colors.size()]
+		_set_glow_color(_get_dominant_claim_color())
+
+func _set_glow_color(color: Color) -> void:
+	glow_sprite.modulate = color
+	if glow_sprite.material is ShaderMaterial:
+		glow_sprite.material.set_shader_parameter("team_color", color)
+
+func _get_dominant_claim_color() -> Color:
+	var counts: Dictionary = {}
+	var first_team: int = -1
+	for key in claimed_nodes:
+		if not grid.has(key):
+			continue
+		var cell = grid[key]
+		if cell.get("state", 0) != CellState.CLAIMED:
+			continue
+		var tid: int = cell.get("team_id", 0)
+		if first_team == -1:
+			first_team = tid
+		counts[tid] = counts.get(tid, 0) + 1
+	if counts.is_empty():
+		return team_colors[team_id % team_colors.size()]
+	var best_tid: int = first_team
+	var best_count: int = -1
+	for tid in counts:
+		if counts[tid] > best_count:
+			best_count = counts[tid]
+			best_tid = tid
+	return team_colors[best_tid % team_colors.size()]
+
+func _tint_sprite(node: Node, color: Color) -> void:
+	if not node is Sprite2D:
+		return
+	if node.material is ShaderMaterial:
+		var mat: ShaderMaterial = node.material.duplicate()
+		node.material = mat
+		mat.set_shader_parameter("team_color", color)
+	else:
+		node.modulate = color
 
 func apply_team_color_to_stamp(stamp: Node):
-	if stamp.get_child_count() < 1:
-		return
-	
-	var team_color = team_colors[team_id % team_colors.size()]
-	
-	# Apply to all children of the stamp
+	var color = team_colors[team_id % team_colors.size()]
+	# The stamp root may itself be the Sprite2D (e.g. claim.tscn)
+	_tint_sprite(stamp, color)
 	for i in range(stamp.get_child_count()):
-		var sprite = stamp.get_child(i)
-		if sprite is Sprite2D:
-			# Check if the sprite has a shader material
-			if sprite.material is ShaderMaterial:
-				# Create a unique material instance for each sprite
-				var material = sprite.material.duplicate()
-				sprite.material = material
-				
-				# Set the team color shader parameter
-				material.set_shader_parameter("team_color", team_color)
-			else:
-				# If no shader material, use modulate as fallback
-				sprite.modulate = team_color
+		_tint_sprite(stamp.get_child(i), color)
 
 func update_stamp_appearance(stamp: Node, state: CellState):
 	if stamp.get_child_count() < 2:
@@ -741,12 +802,10 @@ func update_stamp_appearance(stamp: Node, state: CellState):
 			main_sprite.scale = Vector2.ONE
 			
 		CellState.CULTIVATED:
-			# Use the team color with transparency for cultivated state
-			main_sprite.modulate = Color(team_color.r, team_color.g, team_color.b, 0.5)
-			main_sprite.scale = Vector2.ONE * 0.01  # Start tiny
-			
+			main_sprite.modulate = Color(1, 1, 1, 0.5)
+			main_sprite.scale = Vector2.ONE * 0.01
 			overlay_sprite.visible = true
-			overlay_sprite.modulate = Color(team_color.r, team_color.g, team_color.b, 0.7)  # Apply team color
+			overlay_sprite.modulate = Color(1, 1, 1, 0.7)
 			overlay_sprite.scale = Vector2.ONE
 
 func update_all_stamps():
@@ -765,7 +824,7 @@ func update_all_stamps():
 	
 	# Also update glow_sprite color if visible
 	if glow_sprite.visible:
-		glow_sprite.modulate = team_colors[team_id % team_colors.size()]
+		_set_glow_color(_get_dominant_claim_color())
 
 # Remove unused coordinate conversion functions since we're using simple distance checks
 func pixel_to_hex(pixel: Vector2) -> Vector2:
@@ -823,7 +882,7 @@ func check_for_triangles():
 	if adjacency_cache.is_empty() or claimed_nodes.size() % 5 == 0:
 		cache_adjacent_cells()
 	
-	# Collect all cultivated cells and verify they exist in the grid
+	# Collect all cultivated cells grouped by team
 	for key in claimed_nodes:
 		if grid.has(key) and \
 		   grid[key].has("state") and \
@@ -866,9 +925,13 @@ func check_for_triangles():
 			if adj_node in adjacency_cache[node2] and cultivated_cache.get(adj_node, false):
 				common_adjacents.append(adj_node)
 		
-		# Add triangles for any common adjacents
+		# Add triangles for any common adjacents — same team only
 		for node3 in common_adjacents:
-			# Sort the nodes to avoid duplicates
+			var t1 = grid[node1].get("team_id", -1)
+			var t2 = grid[node2].get("team_id", -1)
+			var t3 = grid[node3].get("team_id", -1)
+			if t1 != t2 or t2 != t3:
+				continue
 			var triangle = [node1, node2, node3]
 			triangle.sort()
 			triangles.append(triangle)

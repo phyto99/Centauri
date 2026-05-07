@@ -175,6 +175,9 @@ func _connect_existing_planets() -> void:
 		_connect_planet(planet)
 
 func _on_node_added(node: Node) -> void:
+	_connect_deferred.call_deferred(node)
+
+func _connect_deferred(node: Node) -> void:
 	if node.is_in_group("planets"):
 		_connect_planet(node)
 
@@ -196,13 +199,8 @@ func _on_planet_hovered(planet: Node) -> void:
 
 	_planet = planet
 
-	var team_colors = [
-		Color(0, 1, 1),
-		Color(1, 0, 1),
-		Color(1, 1, 0),
-		Color(1, 0, 0),
-	]
-	_team_color = team_colors[planet.team_id % team_colors.size()]
+	var colors = planet.get("team_colors")
+	_team_color = colors[planet.team_id % colors.size()] if colors else Color(1, 1, 1)
 	_refresh_team_color()
 
 	_name_label.text = "Planet " + planet.planet_name if planet.get("planet_name") else "Planet"

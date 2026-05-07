@@ -42,9 +42,15 @@ var current_mode: String = "none"
 
 func _get_landed_planet() -> Node:
 	for ship in get_tree().get_nodes_in_group("players"):
+		if not is_instance_valid(ship):
+			continue
+		var cam = ship.get_node_or_null("Camera2D")
+		if not (cam and cam.enabled):
+			continue
 		var p = ship.get("landed_planet")
 		if p != null and is_instance_valid(p):
 			return p
+		return null  # active player exists but isn't landed
 	return null
 
 func _on_claim_pressed():

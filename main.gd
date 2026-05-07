@@ -11,12 +11,34 @@ func spawn_players() -> void:
 	var sun = get_tree().get_nodes_in_group("sun_planet").front()
 	if not sun or not player_scene:
 		return
+
+	# Derive how far the ship's back edge is from its origin
+	var back_dist := 95.0
+	var probe := player_scene.instantiate()
+	var cpoly := probe.get_node_or_null("CollisionPolygon2D")
+	if cpoly:
+		var min_x := INF
+		for pt: Vector2 in cpoly.polygon:
+			min_x = min(min_x, pt.x)
+		back_dist = -(min_x + cpoly.position.x)
+	probe.free()
+
+	var existing := get_tree().get_nodes_in_group("players")
+	var total    := existing.size() + player_count
+	var spawn_r: float = sun.surface_radius + back_dist
+
+	for i in range(existing.size()):
+		var angle := i * TAU / total - PI / 2.0
+		existing[i].global_position = sun.global_position + Vector2.from_angle(angle) * spawn_r
+		existing[i].rotation = angle
+
 	for i in range(player_count):
-		var angle := i * TAU / player_count - PI / 2.0
+		var angle := (existing.size() + i) * TAU / total - PI / 2.0
 		var p := player_scene.instantiate()
-		p.team_id = i
+		p.team_id = existing.size() + i
 		add_child(p)
-		p.global_position = sun.global_position + Vector2.from_angle(angle) * sun.surface_radius
+		p.global_position = sun.global_position + Vector2.from_angle(angle) * spawn_r
+		p.rotation = angle
 
 func spawn_random_planets() -> void:
 	var sun = get_tree().get_nodes_in_group("sun_planet").front()
