@@ -954,14 +954,26 @@ func _on_collect_pressed() -> void:
 		cl.confirmed.connect(_on_collect_confirmed)
 	cl.open(yield_count)
 
-func _on_collect_confirmed(food_amount: int, _fuel_amount: int) -> void:
-	total_yield_collected += yield_count
-	food += food_amount
+func _on_collect_confirmed(food_amount: int, fuel_amount: int) -> void:
+	var player := _get_active_landed_player()
+	if player:
+		if food_amount > 0:
+			player.collect_food(float(food_amount))
+		if fuel_amount > 0:
+			player.current_fuel = min(player.max_fuel, player.current_fuel + float(fuel_amount))
+
+	total_yield_collected += food_amount + fuel_amount
+
+	# Reset per-team yield on this planet and notify scoreboard
+	var affected_teams: Array = team_yield_counts.keys()
+	team_yield_counts.clear()
 	yield_count = 0
+
 	moves_remaining -= 1
 	emit_signal("moves_updated", moves_remaining)
-	emit_signal("food_updated", food)
 	emit_signal("yield_updated", yield_count)
+	for tid in affected_teams:
+		emit_signal("team_yield_updated", tid, 0)
 	update_stats()
 
 

@@ -1,13 +1,13 @@
 extends ItemList
 
 # ── Column mapping (matches header in scoreboard.tscn, 8 cols × 2 header rows = 16 items) ──
-# col 0 = cultivate icon  → yield grown (team_yield_counts)
-# col 1 = collect icon    → food delivered to sun
-# col 2 = claim icon      → claimed planets count (dominion)
-# col 3 = "food"          → food (same as col 1 for now, or 0 until defined)
+# col 0 = cultivate icon  → yield grown (crops growing)
+# col 1 = collect icon    → crops in all same-team players' inventories (live)
+# col 2 = claim icon      → crops delivered to sun (accumulated)
+# col 3 = "food"          → 0 (not yet defined)
 # col 4 = "diversity"     → 0 (not yet defined)
 # col 5 = "dominion"      → planets owned (dominant team)
-# col 6 = "efficiency"    → efficiency % (food delivered / yield grown * 100)
+# col 6 = "efficiency"    → efficiency % (delivered / grown * 100)
 # col 7 = "Total"         → 0 (not yet defined)
 
 const _HEADER_ITEMS = 16
@@ -15,8 +15,8 @@ const _MAX_COLUMNS  = 8
 
 # ── Per-team accumulators ─────────────────────────────────────────────────────
 
-var _team_yield: Dictionary = {}   # team_id → total yield grown
-var _team_food:  Dictionary = {}   # team_id → food delivered to sun
+var _team_yield:     Dictionary = {}   # team_id → total yield grown
+var _team_delivered: Dictionary = {}   # team_id → crops delivered to sun (accumulated)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -66,10 +66,26 @@ func _get_dominion(tid: int) -> int:
 			count += 1
 	return count
 
+# Sum of food_amount across all players on this team (live inventory).
+func _get_team_inventory(tid: int) -> int:
+	var total := 0
+	for ship in get_tree().get_nodes_in_group("players"):
+		if ship.get("team_id") == tid:
+			total += int(ship.get("food_amount") if ship.get("food_amount") != null else 0)
+	return total
+
+# Sum of total_food_delivered across all players on this team.
+func _get_team_delivered(tid: int) -> int:
+	var total := 0
+	for ship in get_tree().get_nodes_in_group("players"):
+		if ship.get("team_id") == tid:
+			total += int(ship.get("total_food_delivered") if ship.get("total_food_delivered") != null else 0)
+	return total
+
 # food delivered / yield grown × 100, clamped 0-100.
 func _get_efficiency(tid: int) -> int:
 	var grown: int = _team_yield.get(tid, 0)
-	var delivered: int = _team_food.get(tid, 0)
+	var delivered: int = _get_team_delivered(tid)
 	if grown <= 0:
 		return 0
 	return clampi(int(float(delivered) / float(grown) * 100.0), 0, 100)
@@ -108,6 +124,9 @@ func _connect_ship(ship: Node) -> void:
 	if ship.has_signal("food_delivered") and \
 			not ship.food_delivered.is_connected(_on_food_delivered):
 		ship.food_delivered.connect(_on_food_delivered)
+	if ship.has_signal("food_inventory_changed") and \
+			not ship.food_inventory_changed.is_connected(_on_inventory_changed):
+		ship.food_inventory_changed.connect(_on_inventory_changed)
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
@@ -119,11 +138,28 @@ func _on_team_yield_updated(team_id: int, _count: int) -> void:
 	_rebuild_team_rows()
 
 func _on_food_delivered(team_id: int, amount: int) -> void:
-	_team_food[team_id] = _team_food.get(team_id, 0) + amount
+	_team_delivered[team_id] = _team_delivered.get(team_id, 0) + amount
+	_rebuild_team_rows()
+
+func _on_inventory_changed(_team_id: int) -> void:
 	_rebuild_team_rows()
 
 func _on_state_changed() -> void:
 	_rebuild_team_rows()
+
+# Column widths derived from header row 2 padding in scoreboard.tscn
+# Each width = length of the header item text (e.g. "0          " = 11 chars total)
+const _COL_WIDTHS = [11, 10, 13, 19, 23, 24, 19, 1]
+
+# Centers a string within a given width by padding with spaces.
+func _center_text(text: String, width: int) -> String:
+	var text_len := text.length()
+	if text_len >= width:
+		return text
+	var total_pad := width - text_len
+	var left_pad := int(total_pad / 2.0)
+	var right_pad := total_pad - left_pad
+	return " ".repeat(left_pad) + text + " ".repeat(right_pad)
 
 # ── Row builder ───────────────────────────────────────────────────────────────
 
@@ -139,20 +175,20 @@ func _rebuild_team_rows() -> void:
 		var color: Color = _team_color(t)
 		var bg: Color    = Color(color.r, color.g, color.b, 0.25)
 
-		# One value per column, matching the header exactly
-		var cols: Array = [
-			str(_team_yield.get(t, 0)),   # col 0: yield (cultivate)
-			str(_team_food.get(t, 0)),    # col 1: food delivered (collect)
-			str(_get_dominion(t)),        # col 2: claimed planets (claim)
-			str(_team_food.get(t, 0)),    # col 3: food (same source, header says "food")
-			"0",                          # col 4: diversity (not yet defined)
-			str(_get_dominion(t)),        # col 5: dominion (planets owned)
-			str(_get_efficiency(t)),      # col 6: efficiency %
-			"0",                          # col 7: Total (not yet defined)
+		var values: Array = [
+			str(_team_yield.get(t, 0)),        # col 0: crops growing (yield)
+			str(_get_team_inventory(t)),        # col 1: crops in inventory (live)
+			str(_get_team_delivered(t)),        # col 2: crops delivered to sun
+			"0",                                # col 3: food (not yet defined)
+			"0",                                # col 4: diversity (not yet defined)
+			str(_get_dominion(t)),              # col 5: dominion (planets owned)
+			str(_get_efficiency(t)),            # col 6: efficiency %
+			"0",                                # col 7: Total (not yet defined)
 		]
 
 		for col_idx in range(_MAX_COLUMNS):
-			add_item(cols[col_idx])
+			var text: String = _center_text(values[col_idx], _COL_WIDTHS[col_idx])
+			add_item(text)
 			var idx := item_count - 1
 			set_item_selectable(idx, false)
 			set_item_custom_bg_color(idx, bg)

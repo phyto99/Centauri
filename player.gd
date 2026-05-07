@@ -23,6 +23,7 @@ var rotation_dir: float = 0.0
 var state        := IDLE
 var current_fuel: float = 0.0
 var food_amount:  float = 0.0
+var total_food_delivered: int = 0
 
 # Landing state
 var landed_planet: Node = null
@@ -53,6 +54,7 @@ func _ready() -> void:
 		_create_fuel_bar()
 
 signal food_delivered(team_id: int, amount: int)
+signal food_inventory_changed(team_id: int)
 
 func _setup_land_detector() -> void:
 	var area := Area2D.new()
@@ -71,11 +73,13 @@ func _on_planet_contact(body: Node) -> void:
 		return
 	if Input.is_action_pressed("thrust"):
 		return
-	# Deliver food to sun on contact
+	# Deliver food to sun on contact — zero inventory instantly
 	if body.get("is_sun") and food_amount > 0.0:
-		var delivered := int(food_amount)
+		var delivered := roundi(food_amount)
 		food_amount = 0.0
+		total_food_delivered += delivered
 		emit_signal("food_delivered", team_id, delivered)
+		emit_signal("food_inventory_changed", team_id)
 	landed_planet = body
 	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
@@ -129,12 +133,7 @@ func update_fuel(delta: float) -> void:
 	if thrust.length() > 0.0:
 		current_fuel = max(0.0, current_fuel - fuel_depletion_rate * delta)
 	else:
-		var regen := base_fuel_regen_rate * delta
-		if food_amount > 0.0:
-			var used: float = min(food_amount, delta)
-			food_amount -= used
-			regen += used * food_to_fuel_ratio * food_fuel_regen_boost
-		current_fuel = min(max_fuel, current_fuel + regen)
+		current_fuel = min(max_fuel, current_fuel + base_fuel_regen_rate * delta)
 	update_fuel_bar()
 
 func update_fuel_bar() -> void:
@@ -144,6 +143,7 @@ func update_fuel_bar() -> void:
 
 func collect_food(amount: float) -> void:
 	food_amount += amount
+	emit_signal("food_inventory_changed", team_id)
 
 func _process(delta: float) -> void:
 	get_input()
