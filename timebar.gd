@@ -1,6 +1,5 @@
 extends Sprite2D
 
-@onready var timebar = $UI/Timebar
 @onready var timer = $Timer
 var total_time = 10.0
 var elapsed_time = 0.0
@@ -17,9 +16,8 @@ func _process(delta):
 		set_timebar_progress(progress)
 
 func set_timebar_progress(value: float):
-	# Access the material directly when setting the parameter
-	if timebar and timebar.material:
-		timebar.material.set_shader_parameter("progress", value)
+	if material:
+		material.set_shader_parameter("progress", value)
 
 func _on_timer_timeout() -> void:
 	pass # Replace with function body.

@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://hdoj34ls38g2"]
+[gd_scene load_steps=25 format=3 uid="uid://hdoj34ls38g2"]
 
 [ext_resource type="Script" path="res://PlanetBuilder.gd" id="1_e5ibc"]
 [ext_resource type="Script" path="res://main.gd" id="1_omk3f"]
@@ -16,6 +16,7 @@
 [ext_resource type="PackedScene" uid="uid://dai4khkf82315" path="res://scoreboard.tscn" id="12_rdf2a"]
 [ext_resource type="Texture2D" uid="uid://b1fe1axpqoltg" path="res://UI/cultivatesmall.svg" id="12_yck52"]
 [ext_resource type="Texture2D" uid="uid://5d3gff7xrii1" path="res://UI/collect.svg" id="13_q2t6h"]
+[ext_resource type="Script" path="res://player_crops_label.gd" id="15_hwgsd"]
 [ext_resource type="Shader" path="res://timebar.gdshader" id="16_7gpu8"]
 [ext_resource type="Script" path="res://movesleft_2.gd" id="16_o5c86"]
 [ext_resource type="Texture2D" uid="uid://yoegu2a48mq6" path="res://UI/Timebar.svg" id="17_20s6f"]
@@ -45,12 +46,13 @@ script = ExtResource("1_e5ibc")
 sprite_scene = ExtResource("3_4k0bi")
 claim_stamp_scene = ExtResource("3_6u3hu")
 cultivate_stamp_scene = ExtResource("9_70svg")
+is_sun = true
 
 [node name="Sprite2D" type="Sprite2D" parent="PlanetBuilder"]
 visible = false
 texture = ExtResource("7_6lr3u")
 
-[node name="UI" type="Control" parent="." node_paths=PackedStringArray("claim_button", "cultivate_button")]
+[node name="UI" type="Control" parent="." node_paths=PackedStringArray("claim_button", "cultivate_button", "collect_button")]
 layout_mode = 3
 anchors_preset = 0
 offset_right = 40.0
@@ -58,6 +60,7 @@ offset_bottom = 40.0
 script = ExtResource("4_hgggt")
 claim_button = NodePath("CanvasLayer/Claim")
 cultivate_button = NodePath("CanvasLayer/Cultivate")
+collect_button = NodePath("CanvasLayer/Collect")
 
 [node name="SizeSlider" type="HSlider" parent="UI"]
 layout_mode = 0
@@ -114,7 +117,7 @@ offset_top = 592.0
 offset_right = 330.0
 offset_bottom = 647.0
 theme_override_font_sizes/font_size = 27
-text = "999"
+script = ExtResource("15_hwgsd")
 
 [node name="movesleft" type="Sprite2D" parent="UI/CanvasLayer"]
 position = Vector2(1050, 631)
