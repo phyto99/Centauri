@@ -29,6 +29,13 @@ var _claims_label:       Label
 var _claims_icon:        TextureRect
 var _claims_badge_style: StyleBoxFlat = null
 var _tax_label:          Label = null
+var _tax_badge:          PanelContainer = null
+var _claims_badge:       PanelContainer = null
+var _badges_row:         HBoxContainer = null
+var _uncol_margin:       MarginContainer = null
+var _mid_vbox:           VBoxContainer = null
+var _top_spacer:         Control = null
+var _inner_pad:          MarginContainer = null
 
 # Container for the dynamic per-team cultivate badges
 var _bot_box: VBoxContainer = null
@@ -85,8 +92,7 @@ func _build_ui() -> void:
 	mid_margin.add_theme_constant_override("margin_bottom", 0)
 	mid_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mid_margin.position = Vector2(0.0, HEADER_H)
-	mid_margin.size = Vector2(WIDTH, 0)   # width fixed, height auto
-	mid_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid_margin.size = Vector2(WIDTH, 0)
 
 	# Backing colour rect that resizes with the MarginContainer
 	var mid_bg = ColorRect.new()
@@ -101,25 +107,26 @@ func _build_ui() -> void:
 	mid_vbox.add_theme_constant_override("separation", 2)
 	mid_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mid_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mid_margin.add_child(mid_vbox)
 
-	# Top padding spacer inside the grey box
-	var top_spacer = Control.new()
-	top_spacer.custom_minimum_size = Vector2(0, 4)
-	top_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mid_vbox.add_child(top_spacer)
+	# Inner padding container — grey fills the outer mid_margin, padding is inside
+	var inner_pad = MarginContainer.new()
+	inner_pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner_pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	inner_pad.add_theme_constant_override("margin_left", 4)
+	inner_pad.add_theme_constant_override("margin_right", 4)
+	inner_pad.add_theme_constant_override("margin_top", 4)
+	inner_pad.add_theme_constant_override("margin_bottom", 4)
+	inner_pad.add_child(mid_vbox)
+	mid_margin.add_child(inner_pad)
+	_mid_vbox = mid_vbox
+	_inner_pad = inner_pad
 
 	var badges_row = HBoxContainer.new()
 	badges_row.add_theme_constant_override("separation", 6)
 	badges_row.alignment = BoxContainer.ALIGNMENT_BEGIN
 	badges_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mid_vbox.add_child(badges_row)
-
-	# Left margin spacer (outside the badge box)
-	var left_pad = Control.new()
-	left_pad.custom_minimum_size = Vector2(3, 0)
-	left_pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badges_row.add_child(left_pad)
+	_badges_row = badges_row
 
 	_make_tax_badge(badges_row)
 	_make_claims_badge(badges_row)
@@ -130,9 +137,10 @@ func _build_ui() -> void:
 	uncol_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	uncol_margin.add_theme_constant_override("margin_left", 0)
 	uncol_margin.add_theme_constant_override("margin_right", 0)
-	uncol_margin.add_theme_constant_override("margin_top", 3)
-	uncol_margin.add_theme_constant_override("margin_bottom", 1)
+	uncol_margin.add_theme_constant_override("margin_top", 2)
+	uncol_margin.add_theme_constant_override("margin_bottom", 0)
 	mid_vbox.add_child(uncol_margin)
+	_uncol_margin = uncol_margin
 
 	var uncol = Label.new()
 	uncol.text = "UNCOLLECTED"
@@ -175,6 +183,7 @@ func _build_ui() -> void:
 func _make_tax_badge(parent: Node) -> void:
 	var c = PanelContainer.new()
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tax_badge = c
 
 	var style = StyleBoxFlat.new()
 	style.bg_color            = Color(0, 0, 0, 0)
@@ -205,6 +214,7 @@ func _make_tax_badge(parent: Node) -> void:
 func _make_claims_badge(parent: Node) -> void:
 	var c = PanelContainer.new()
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_claims_badge = c
 
 	_claims_badge_style = StyleBoxFlat.new()
 	_claims_badge_style.bg_color            = Color(0, 0, 0, 0)
@@ -327,8 +337,9 @@ func _rebuild_cultivate_badges(planet: Node) -> void:
 			row_count += 1
 
 	if row_count == 0:
-		_make_cultivate_badge(Color.WHITE, 0)
-		row_count = 1
+		_bot_panel.visible = false
+	else:
+		_bot_panel.visible = true
 
 	var cur_w: float = custom_minimum_size.x if custom_minimum_size.x > 0 else WIDTH
 	var bot_h: float = BOTTOM_H_PER_TEAM * row_count
@@ -404,7 +415,7 @@ func _connect_planet(planet: Node) -> void:
 # ── HOVER HANDLERS ────────────────────────────────────────────────────────────
 
 func _on_planet_hovered(planet: Node) -> void:
-	if _planet and _planet != planet:
+	if _planet and is_instance_valid(_planet) and _planet != planet:
 		if _planet.has_signal("yield_updated") and _planet.yield_updated.is_connected(_on_yield_updated):
 			_planet.yield_updated.disconnect(_on_yield_updated)
 		if _planet.has_signal("tax_updated") and _planet.tax_updated.is_connected(_on_tax_updated):
@@ -417,6 +428,7 @@ func _on_planet_hovered(planet: Node) -> void:
 
 	_refresh_claims(planet)
 	_refresh_tax_badge(planet)
+	_refresh_visibility(planet)
 	_rebuild_cultivate_badges(planet)
 
 	if planet.has_signal("yield_updated") and not planet.yield_updated.is_connected(_on_yield_updated):
@@ -435,24 +447,21 @@ func _on_planet_unhovered() -> void:
 	call_deferred("_check_still_hovered")
 
 func _check_still_hovered() -> void:
-	# If _planet is still set, a new hovered signal already claimed it — keep showing.
-	# If _planet is null, nothing claimed it — already hidden.
-	# We only need to hide if _planet is set but the mouse has genuinely left.
-	# Since _on_planet_hovered sets _planet immediately when entering a new planet,
-	# by the time this deferred call runs, _planet will be the new planet (not null).
-	# So we only hide if _planet is still the same planet that triggered unhovered,
-	# which we track via _last_unhovered.
-	if _planet != null and _planet == _last_unhovered:
+	if _planet != null and is_instance_valid(_planet) and _planet == _last_unhovered:
 		if _planet.has_signal("yield_updated") and _planet.yield_updated.is_connected(_on_yield_updated):
 			_planet.yield_updated.disconnect(_on_yield_updated)
 		if _planet.has_signal("tax_updated") and _planet.tax_updated.is_connected(_on_tax_updated):
 			_planet.tax_updated.disconnect(_on_tax_updated)
 		_planet = null
 		hide()
+	elif _planet != null and not is_instance_valid(_planet):
+		# Planet was freed externally — clean up silently
+		_planet = null
+		hide()
 	_last_unhovered = null
 
 func _do_hide() -> void:
-	if _planet:
+	if _planet and is_instance_valid(_planet):
 		if _planet.has_signal("yield_updated") and _planet.yield_updated.is_connected(_on_yield_updated):
 			_planet.yield_updated.disconnect(_on_yield_updated)
 		if _planet.has_signal("tax_updated") and _planet.tax_updated.is_connected(_on_tax_updated):
@@ -462,17 +471,19 @@ func _do_hide() -> void:
 	set_process(false)
 
 func _on_yield_updated(_count: int) -> void:
-	if _planet:
+	if _planet and is_instance_valid(_planet):
+		_refresh_visibility(_planet)
 		_rebuild_cultivate_badges(_planet)
 
 func _on_tax_updated() -> void:
-	if _planet:
+	if _planet and is_instance_valid(_planet):
 		_refresh_tax_badge(_planet)
 		_rebuild_cultivate_badges(_planet)
 
 func _on_moves_updated(_remaining: int) -> void:
-	if _planet:
+	if _planet and is_instance_valid(_planet):
 		_refresh_claims(_planet)
+		_refresh_visibility(_planet)
 
 static func _gcd(a: int, b: int) -> int:
 	while b != 0:
@@ -496,6 +507,11 @@ func _refresh_tax_badge(planet: Node) -> void:
 # ── PROCESS ───────────────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
+	# If the planet we're showing was freed externally, hide cleanly
+	if _planet != null and not is_instance_valid(_planet):
+		_planet = null
+		hide()
+		return
 	global_position = get_global_mouse_position() + MOUSE_OFFSET
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -517,13 +533,54 @@ func _resize_to_name() -> void:
 
 	# Resize mid margin
 	if _mid_margin:
+		_mid_margin.custom_minimum_size.x = new_width
 		_mid_margin.size.x = new_width
+	if _inner_pad:
+		_inner_pad.custom_minimum_size.x = new_width
 
 	# Resize bot panel
 	if _bot_panel:
 		_bot_panel.size.x = new_width
 
 	custom_minimum_size.x = new_width
+
+# Show/hide mid panel elements based on planet state.
+func _refresh_visibility(planet: Node) -> void:
+	# Uncollected section: only show if yield_count > 0
+	var has_yield: bool = (planet.get("yield_count") if planet.get("yield_count") != null else 0) > 0
+	if _uncol_margin:
+		_uncol_margin.visible = has_yield
+
+	# Count claims on this planet
+	var has_claims := false
+	for cell in planet.grid.values():
+		if cell.get("state", -1) == planet.CellState.CLAIMED:
+			has_claims = true
+			break
+
+	# Tax badge: hide if no dominant team (no claims)
+	var dom_id: int = planet.get("dominant_team_id") if planet.get("dominant_team_id") != null else -1
+	var has_tax: bool = dom_id >= 0 and has_claims
+	if _tax_badge:
+		_tax_badge.visible = has_tax
+
+	# Claims badge: hide if no claims at all
+	if _claims_badge:
+		_claims_badge.visible = has_claims
+
+	# Hide the whole badges row if both badges are hidden
+	var badges_visible: bool = has_tax or has_claims
+	if _badges_row:
+		_badges_row.visible = badges_visible
+
+	# Hide the entire mid grey panel if there's nothing in it
+	if _mid_margin:
+		_mid_margin.visible = badges_visible or has_yield
+		if _mid_margin.visible:
+			_mid_margin.reset_size()
+	# Force VBox to re-sort so hidden children don't leave gaps
+	if _mid_vbox:
+		_mid_vbox.queue_sort()
 
 func _refresh_claims(planet: Node) -> void:
 	var team_counts: Dictionary = {}

@@ -45,9 +45,58 @@ var max_scale_factor: float = 1
 @export var moves_remaining: int = 999
 @export var editing_mode: bool = false
 @export var is_sun: bool = false
-@export var gravity_strength: float = 5000.0
+@export var gravity_strength: float = 160.0   # G constant, matches mapmaker N-body (G_BASE * G_MULT)
 
 var planet_name: String = ""
+
+# ── Appearance ────────────────────────────────────────────────────────────────
+# Color index matches PLANET_COLORS order; texture index: 0=bluegreen, 1=sapphire
+var planet_color_index: int = 0
+var planet_texture_index: int = 0
+
+# Colors are hue-shift modulates applied to the base texture.
+# The textures are already tinted (bluegreen ≈ cyan-green, sapphire ≈ blue).
+# We modulate to shift toward the target hue.
+const PLANET_COLORS: Array = [
+	# name,           shader color,                contrast, brightness
+	["Sapphire",   Color(0.20, 0.40, 0.85),  2.0,  1.8],   # 0
+	["Green",      Color(0.10, 0.45, 0.12),  2.5,  2.0],   # 1
+	["Bluegreen",  Color(1.00, 1.00, 1.00),  1.0,  1.0],   # 2 — no shader
+	["Grey",       Color(0.72, 0.72, 0.72),  6.5,  1.0],   # 3 — mid grey, extreme contrast
+	["Gold",       Color(1.00, 0.95, 0.75),  1.2,  1.8],   # 4
+	["Pink",       Color(1.00, 0.45, 0.45),  1.3,  1.8],   # 5 — warm red-orange
+	["Red",        Color(0.50, 0.10, 0.15),  2.0,  1.8],   # 6 — slightly cooler, duller
+]
+
+const _TEX_SETS: Array = [
+	["res://planet/bluegreen.svg", "res://planet/bluegreen-open.svg"],
+]
+
+func apply_appearance() -> void:
+	if not outline_sprite:
+		return
+	# Always bluegreen texture
+	_TEX_DEFAULT = load("res://planet/bluegreen.svg")
+	_TEX_HOVER   = load("res://planet/bluegreen-open.svg")
+	var any_landed := _has_landed_player()
+	outline_sprite.texture = _TEX_HOVER if any_landed else _TEX_DEFAULT
+	outline_sprite.modulate = Color.WHITE
+
+	var entry: Array = PLANET_COLORS[planet_color_index % PLANET_COLORS.size()]
+	var col: Color  = entry[1]
+	var cont: float = entry[2]
+	var brit: float = entry[3]
+	# White = bluegreen native, no shader needed
+	if col == Color(1.00, 1.00, 1.00):
+		outline_sprite.material = null
+	else:
+		if not (outline_sprite.material is ShaderMaterial):
+			var mat := ShaderMaterial.new()
+			mat.shader = load("res://planet_color.gdshader")
+			outline_sprite.material = mat
+		outline_sprite.material.set_shader_parameter("planet_color", col)
+		outline_sprite.material.set_shader_parameter("contrast", cont)
+		outline_sprite.material.set_shader_parameter("brightness", brit)
 
 signal moves_updated(remaining)
 signal yield_updated(count)
@@ -72,7 +121,7 @@ func _ready():
 			outline_sprite.texture = _TEX_HOVER)
 	mouse_exited.connect(func():
 		emit_signal("planet_unhovered")
-		if not is_sun:
+		if not is_sun and not _has_landed_player():
 			outline_sprite.texture = _TEX_DEFAULT)
 	position = starting_position
 	setup_collision_and_outline()
@@ -91,8 +140,8 @@ func _setup_as_sun() -> void:
 	editing_mode = true
 	freeze_mode = RigidBody2D.FREEZE_MODE_STATIC
 	freeze = true
-	if current_size != 150:
-		current_size = 150
+	if current_size != 100:
+		current_size = 100
 		generate_grid()
 	var white_mat := ShaderMaterial.new()
 	white_mat.shader = load("res://cyanwhite.gdshader")
@@ -148,16 +197,33 @@ func _process(_delta):
 	update_stats()
 
 func _physics_process(_delta):
+	if is_sun or freeze:
+		return
+
+	# N-body gravity: attract toward every other planet (including sun)
+	for other in get_tree().get_nodes_in_group("planets"):
+		if not is_instance_valid(other) or other == self:
+			continue
+		var to_other: Vector2 = other.global_position - global_position
+		var dist_sq: float = to_other.length_squared()
+		if dist_sq < 1.0:
+			continue
+		var dist: float = sqrt(dist_sq)
+		# F = G * M / r²  (applied as acceleration, so mass of self cancels)
+		var force: float = gravity_strength * other.mass / dist_sq
+		apply_central_force(to_other.normalized() * force)
+
+	# Gravity toward ships (existing behaviour)
 	for ship in get_tree().get_nodes_in_group("players"):
 		if not is_instance_valid(ship):
 			continue
 		if ship.get("landed_planet") != null:
-			continue   # planet manages position directly; skip gravity
-		var to_planet: Vector2 = global_position - ship.global_position
-		var dist: float = to_planet.length()
-		if dist < 1.0:
 			continue
-		ship.apply_central_force(to_planet.normalized() * gravity_strength / dist)
+		var to_planet: Vector2 = global_position - ship.global_position
+		var dist_sq: float = to_planet.length_squared()
+		if dist_sq < 1.0:
+			continue
+		ship.apply_central_force(to_planet.normalized() * gravity_strength * mass / dist_sq)
 
 func update_cell_positions():
 	# This keeps the grid aligned with the planet as it moves
@@ -172,8 +238,8 @@ func update_cell_positions():
 var glow_sprite: Sprite2D
 var surface_radius: float = 0.0
 
-const _TEX_DEFAULT = preload("res://planet/sapphire.svg")
-const _TEX_HOVER   = preload("res://planet/sapphire-open.svg")
+var _TEX_DEFAULT: Texture2D = preload("res://planet/bluegreen.svg")
+var _TEX_HOVER:   Texture2D = preload("res://planet/bluegreen-open.svg")
 
 func set_player_landed(landed: bool) -> void:
 	if is_sun:
@@ -185,6 +251,8 @@ func setup_collision_and_outline():
 	add_child(collision_shape)
 	outline_sprite = Sprite2D.new()
 	outline_sprite.texture = _TEX_DEFAULT
+	# Random rotation so each planet looks unique
+	outline_sprite.rotation = randf() * TAU
 	add_child(outline_sprite)
 	outline_sprite.z_index = 1
 
@@ -563,11 +631,14 @@ func _input(event):
 		var current_cell_state = grid[closest_hex].get("state", CellState.UNCLAIMED)
 		var current_cell_team: int = grid[closest_hex].get("team_id", -1)
 
-		if current_action == CellState.CULTIVATED:
+		# Snapshot action now — before any state mutation
+		var action_to_apply: int = current_action
+
+		if action_to_apply == CellState.CULTIVATED:
 			# Cultivate only lands on empty cells
 			if current_cell_state != CellState.UNCLAIMED:
 				return
-		elif current_action == CellState.CLAIMED:
+		elif action_to_apply == CellState.CLAIMED:
 			# Can't re-claim your own cell
 			if current_cell_state == CellState.CLAIMED and current_cell_team == acting_player.team_id:
 				return
@@ -590,11 +661,11 @@ func _input(event):
 		place_sprite_and_fill(Vector2(
 			float(closest_hex.split(",")[0]),
 			float(closest_hex.split(",")[1])
-		))
+		), action_to_apply)
 
-		if current_action == CellState.CULTIVATED:
+		if action_to_apply == CellState.CULTIVATED:
 			check_for_triangles()
-		elif current_action == CellState.CLAIMED:
+		elif action_to_apply == CellState.CLAIMED:
 			var new_dominant := _get_dominant_team_id()
 			if new_dominant != dominant_team_id:
 				dominant_team_id = new_dominant
@@ -715,7 +786,7 @@ func set_team_color(id):
 	# When we change team, update all existing stamps
 	update_all_stamps()
 
-func place_sprite_and_fill(grid_coords: Vector2):
+func place_sprite_and_fill(grid_coords: Vector2, action: int = current_action):
 	var key = str(grid_coords.x) + "," + str(grid_coords.y)
 	if not grid.has(key):
 		push_warning("Attempted to access invalid grid key: " + key)
@@ -726,18 +797,18 @@ func place_sprite_and_fill(grid_coords: Vector2):
 	
 	# Check if we're changing from cultivated to claimed
 	var was_cultivated = cell_data.has("state") and cell_data["state"] == CellState.CULTIVATED
-	var changing_to_claimed = was_cultivated and current_action == CellState.CLAIMED
+	var changing_to_claimed = was_cultivated and action == CellState.CLAIMED
 	
 	# Remove existing stamp if present
 	if cell_data.has("stamp") and is_instance_valid(cell_data["stamp"]):
 		cell_data["stamp"].queue_free()
 	
-	# Create new stamp based on current action
-	var stamp_scene = cultivate_stamp_scene if current_action == CellState.CULTIVATED else claim_stamp_scene
+	# Create new stamp based on action
+	var stamp_scene = cultivate_stamp_scene if action == CellState.CULTIVATED else claim_stamp_scene
 	var stamp = stamp_scene.instantiate()
 	
 	# Use the cell's current position
-	stamp.position = cell_data["pos"]  # Use the stored position
+	stamp.position = cell_data["pos"]
 	stamp.scale = Vector2.ONE * current_scale
 	stamp.z_index = 0
 	add_child(stamp)
@@ -745,7 +816,7 @@ func place_sprite_and_fill(grid_coords: Vector2):
 	# Apply team color to the stamp
 	apply_team_color_to_stamp(stamp)
 	
-	if current_action == CellState.CULTIVATED:
+	if action == CellState.CULTIVATED:
 		var main_sprite = stamp.get_child(0)
 		var overlay_sprite = stamp.get_child(1)
 		# Shader handles RGB — modulate controls alpha only
@@ -758,7 +829,7 @@ func place_sprite_and_fill(grid_coords: Vector2):
 		cell_data["animation_start_time"] = Time.get_ticks_msec() / 1000.0
 	
 	cell_data["stamp"] = stamp
-	cell_data["state"] = current_action
+	cell_data["state"] = action
 	cell_data["team_id"] = team_id  # Store the team ID with the cell data
 	
 	# If we're changing from cultivated to claimed, clear and recheck triangles

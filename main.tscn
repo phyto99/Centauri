@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://hdoj34ls38g2"]
+[gd_scene load_steps=24 format=3 uid="uid://hdoj34ls38g2"]
 
 [ext_resource type="Script" path="res://PlanetBuilder.gd" id="1_e5ibc"]
 [ext_resource type="Script" path="res://main.gd" id="1_omk3f"]
@@ -20,7 +20,6 @@
 [ext_resource type="Shader" path="res://timebar.gdshader" id="16_7gpu8"]
 [ext_resource type="Script" path="res://movesleft_2.gd" id="16_o5c86"]
 [ext_resource type="Texture2D" uid="uid://yoegu2a48mq6" path="res://UI/Timebar.svg" id="17_20s6f"]
-[ext_resource type="Script" path="res://timebar.gd" id="18_7idy5"]
 [ext_resource type="PackedScene" uid="uid://c1gxva4thbixe" path="res://collect_label.tscn" id="19_yvwr0"]
 [ext_resource type="Script" path="res://planet_tooltip.gd" id="22_qouqt"]
 
@@ -76,30 +75,30 @@ offset_bottom = 23.0
 [node name="CanvasLayer" type="CanvasLayer" parent="UI"]
 
 [node name="Claim" type="Button" parent="UI/CanvasLayer"]
-offset_left = 957.0
-offset_top = 504.0
-offset_right = 1143.0
-offset_bottom = 544.0
+offset_left = 965.0
+offset_top = 514.0
+offset_right = 1151.0
+offset_bottom = 554.0
 text = "     Claim"
 icon = ExtResource("11_q1aei")
 alignment = 0
 expand_icon = true
 
 [node name="Cultivate" type="Button" parent="UI/CanvasLayer"]
-offset_left = 957.0
-offset_top = 546.0
-offset_right = 1143.0
-offset_bottom = 582.0
+offset_left = 965.0
+offset_top = 555.0
+offset_right = 1151.0
+offset_bottom = 591.0
 text = "    Cultivate"
 icon = ExtResource("12_yck52")
 alignment = 0
 expand_icon = true
 
 [node name="Collect" type="Button" parent="UI/CanvasLayer"]
-offset_left = 957.0
-offset_top = 584.0
-offset_right = 1143.0
-offset_bottom = 620.0
+offset_left = 965.0
+offset_top = 592.0
+offset_right = 1151.0
+offset_bottom = 628.0
 text = "    Collect"
 icon = ExtResource("13_q2t6h")
 alignment = 0
@@ -120,15 +119,15 @@ theme_override_font_sizes/font_size = 27
 script = ExtResource("15_hwgsd")
 
 [node name="movesleft" type="Sprite2D" parent="UI/CanvasLayer"]
-position = Vector2(1050, 631)
+position = Vector2(1058, 638)
 scale = Vector2(0.8, 0.8)
 texture = ExtResource("12_00f6v")
 
 [node name="movesleft2" type="Label" parent="UI/CanvasLayer"]
-offset_left = 948.0
-offset_top = 619.0
-offset_right = 988.0
-offset_bottom = 647.0
+offset_left = 956.0
+offset_top = 625.0
+offset_right = 996.0
+offset_bottom = 653.0
 theme_override_colors/font_color = Color(0, 0, 0, 1)
 theme_override_font_sizes/font_size = 15
 text = "900"
@@ -136,14 +135,13 @@ horizontal_alignment = 2
 script = ExtResource("16_o5c86")
 
 [node name="Scoreboard" parent="UI/CanvasLayer" instance=ExtResource("12_rdf2a")]
-position = Vector2(0, 10)
+position = Vector2(0, 18)
 
 [node name="Timebar" type="Sprite2D" parent="UI/CanvasLayer"]
 material = SubResource("ShaderMaterial_r6jxc")
-position = Vector2(576, 12)
-scale = Vector2(2.41004, 2)
+position = Vector2(575.25, 4)
+scale = Vector2(2.41736, 2)
 texture = ExtResource("17_20s6f")
-script = ExtResource("18_7idy5")
 
 [node name="Timer" type="Timer" parent="UI/CanvasLayer/Timebar"]
 wait_time = 15.742

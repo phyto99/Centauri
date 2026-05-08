@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbital Mapmaker</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0c0d10;
+    --panel:    #111318;
+    --panel2:   #191c22;
+    --border:   #222630;
+    --border2:  #2e3340;
+    --text:     #c8d0dc;
+    --text2:    #606878;
+    --text3:    #383f4d;
+    --accent:   #4a80ff;
+    --accent2:  #1a2e60;
+  }
+
+  html, body { width:100%; height:100%; overflow:hidden; font-family:'IBM Plex Sans', sans-serif; background:var(--bg); color:var(--text); }
+
+  #app { display:flex; flex-direction:column; height:100vh; }
+
+  #timer-strip {
+    width:100%; height:5px; flex-shrink:0;
+    background:var(--border); cursor:pointer; position:relative; z-index:20;
+  }
+  #timer-fill {
+    height:100%; width:0%;
+    background: var(--accent);
+    transition: none;
+  }
+  #timer-strip:hover #timer-fill { filter: brightness(1.2); }
+
+  /* ghost scrub cursor line */
+  #timer-cursor {
+    position:absolute; top:0; width:1px; height:100%;
+    background:#fff; opacity:0; pointer-events:none; transition:opacity .1s;
+  }
+  #timer-strip:hover #timer-cursor { opacity:0.4; }
+
+  #topbar {
+    display:flex; align-items:center; gap:10px;
+    padding:0 14px; height:44px; flex-shrink:0;
+    background:var(--panel); border-bottom:1px solid var(--border);
+    z-index:10;
+  }
+  #title-mark {
+    font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:600;
+    letter-spacing:.14em; color:var(--accent); text-transform:uppercase; white-space:nowrap;
+  }
+  .divider { width:1px; height:22px; background:var(--border2); flex-shrink:0; }
+  #timer-label {
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--text2);
+    white-space:nowrap; min-width:92px; text-align:right;
+  }
+
+  #main { display:flex; flex:1; min-height:0; }
+
+  #canvas-wrap { flex:1; position:relative; overflow:hidden; }
+  #sim { display:block; width:100%; height:100%; cursor:crosshair; }
+  #sim.drag-mode { cursor:grab; }
+  #sim.drag-move { cursor:grabbing; }
+
+  #panel {
+    width:260px; flex-shrink:0;
+    background:var(--panel); border-left:1px solid var(--border);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+
+  .p-section { padding:11px 13px; border-bottom:1px solid var(--border); }
+  .p-title {
+    font-size:9px; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--text3); margin-bottom:9px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+
+  .ctrl-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .ctrl-row:last-child { margin-bottom:0; }
+  .ctrl-label { font-size:11px; color:var(--text2); min-width:64px; }
+
+  input[type=range] {
+    -webkit-appearance:none; appearance:none; flex:1; height:3px;
+    background:var(--border2); border-radius:0; outline:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none; width:10px; height:10px; border-radius:0;
+    background:var(--accent); border:none; cursor:pointer;
+  }
+  input[type=number], input[type=text] {
+    background:var(--panel2); border:1px solid var(--border2); border-radius:3px;
+    color:var(--text); font-family:'IBM Plex Mono', monospace; font-size:11px;
+    padding:4px 7px; width:100%; outline:none;
+  }
+  input[type=number]:focus, input[type=text]:focus { border-color:var(--accent); }
+  input[type=number] { -moz-appearance:textfield; }
+  input[type=number]::-webkit-inner-spin-button { display:none; }
+
+  .val { font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--text2); min-width:30px; text-align:right; }
+
+  .btn {
+    font-family:'IBM Plex Sans', sans-serif; font-size:11px; font-weight:500;
+    padding:5px 10px; border-radius:3px; border:1px solid var(--border2);
+    background:var(--panel2); color:var(--text2); cursor:pointer; transition:all .12s;
+    white-space:nowrap; letter-spacing:.02em;
+  }
+  .btn:hover { border-color:var(--accent); color:var(--accent); }
+  .btn.primary { background:var(--accent2); border-color:var(--accent); color:var(--accent); }
+  .btn.primary:hover { background:var(--accent); color:#fff; }
+  .btn.danger { border-color:var(--border2); color:#c05050; }
+  .btn.danger:hover { background:#2a1212; border-color:#c05050; }
+  .btn.active { border-color:var(--accent); color:var(--accent); background:var(--accent2); }
+  .btn-row { display:flex; gap:5px; flex-wrap:wrap; }
+
+  #planet-list { flex:1; overflow-y:auto; padding:6px 0; }
+  #planet-list::-webkit-scrollbar { width:3px; }
+  #planet-list::-webkit-scrollbar-track { background:transparent; }
+  #planet-list::-webkit-scrollbar-thumb { background:var(--border2); }
+
+  .pitem {
+    display:flex; align-items:center; gap:8px;
+    padding:6px 13px; cursor:pointer; transition:background .1s;
+    border-left:2px solid transparent;
+  }
+  .pitem:hover { background:var(--panel2); }
+  .pitem.selected { background:var(--panel2); border-left-color:var(--accent); }
+  .pitem-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .pitem-name { flex:1; font-size:12px; color:var(--text); }
+  .pitem-badge { font-size:10px; font-family:'IBM Plex Mono',monospace; color:var(--text3); }
+  .pitem-static { font-size:9px; color:#c0902a; letter-spacing:.05em; }
+
+  #editor { background:var(--panel); border-top:1px solid var(--border); flex-shrink:0; }
+  #editor-inner { padding:11px 13px; }
+  #editor-title { font-size:9px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--text3); margin-bottom:9px; font-family:'IBM Plex Mono',monospace; }
+  .e-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .e-row:last-child { margin-bottom:0; }
+  .e-label { font-size:11px; color:var(--text2); min-width:52px; }
+  .e-half { flex:1; }
+
+  #gem-row { display:flex; gap:4px; flex-wrap:wrap; }
+  .gem-swatch {
+    width:22px; height:22px; border-radius:2px; cursor:pointer;
+    border:2px solid transparent; transition:all .1s;
+  }
+  .gem-swatch:hover { transform:scale(1.1); }
+  .gem-swatch.active { border-color:#fff; }
+
+  /* vel hint text */
+  #vel-hint {
+    font-size:10px; color:var(--text3); font-family:'IBM Plex Mono',monospace;
+    margin-top:4px; line-height:1.5;
+  }
+
+  #tooltip {
+    position:fixed; pointer-events:none;
+    background:var(--panel); border:1px solid var(--border2);
+    border-radius:3px; padding:6px 10px;
+    font-size:11px; color:var(--text2); font-family:'IBM Plex Mono',monospace;
+    display:none; z-index:100; line-height:1.7;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="timer-strip" title="Hover to preview, click to seek">
+    <div id="timer-fill"></div>
+    <div id="timer-cursor"></div>
+  </div>
+
+  <div id="topbar">
+    <div id="title-mark">⬡ Orbital</div>
+    <div class="divider"></div>
+    <button class="btn primary" id="btn-playpause" style="min-width:58px;">▶ Play</button>
+    <button class="btn" id="btn-reset">↺</button>
+    <div class="divider"></div>
+    <span style="font-size:11px;color:var(--text3);">spd</span>
+    <input type="range" id="speed-sl" min="-2" max="3" step="0.1" value="0" style="width:72px;">
+    <span id="speed-val" class="val">1×</span>
+    <div class="divider"></div>
+    <span style="font-size:11px;color:var(--text3);">dur</span>
+    <input type="number" id="dur-input" value="60" min="5" max="3600" style="width:52px;">
+    <span style="font-size:11px;color:var(--text3);">s</span>
+    <div id="timer-label" style="flex:1;text-align:right;">0.0 / 60 s</div>
+    <button class="btn" id="btn-export">↓ Export</button>
+  </div>
+
+  <div id="main">
+    <div id="canvas-wrap">
+      <canvas id="sim"></canvas>
+    </div>
+
+    <div id="panel">
+
+      <div class="p-section">
+        <div class="p-title">Tools</div>
+        <div class="btn-row">
+          <button class="btn active" id="tool-add">+ Planet</button>
+          <button class="btn" id="tool-drag">✥ Move</button>
+          <button class="btn danger" id="btn-clear">✕ Clear</button>
+        </div>
+      </div>
+
+      <div class="p-section">
+        <div class="p-title">Simulation</div>
+        <div class="ctrl-row">
+          <span class="ctrl-label">Gravity</span>
+          <input type="range" id="grav-sl" min="1" max="5" step="0.1" value="2">
+          <span class="val" id="grav-val">2.0</span>
+        </div>
+        <div class="ctrl-row">
+          <span class="ctrl-label">Trail</span>
+          <input type="range" id="trail-sl" min="0" max="600" step="10" value="200">
+          <span class="val" id="trail-val">200</span>
+        </div>
+      </div>
+
+      <div id="planet-list"></div>
+
+      <div id="editor">
+        <div id="editor-inner">
+          <div id="editor-title">— select planet —</div>
+          <div id="editor-body" style="display:none;">
+            <div class="e-row">
+              <span class="e-label">Name</span>
+              <input type="text" id="e-name" class="e-half" placeholder="name">
+            </div>
+            <div class="e-row">
+              <span class="e-label">Color</span>
+              <div id="gem-row"></div>
+            </div>
+            <div class="e-row">
+              <span class="e-label">Radius</span>
+              <input type="range" id="e-radius" min="3" max="40" step="1" value="10" class="e-half">
+              <span class="val" id="e-radius-val">10</span>
+            </div>
+            <div class="e-row">
+              <span class="e-label">Mass</span>
+              <input type="range" id="e-mass" min="1" max="50000" step="1" value="100" class="e-half">
+              <span class="val" id="e-mass-val">100</span>
+            </div>
+            <div id="vel-hint">drag arrow tip to set velocity</div>
+            <div style="margin-top:8px;display:flex;justify-content:flex-end;">
+              <button class="btn danger" id="btn-del-planet">✕ Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+const GEM_COLORS = [
+  { key:'blue',    label:'Blue',    hex:'#3a72e8' },
+  { key:'cyan',    label:'Cyan',    hex:'#1ab8c4' },
+  { key:'green',   label:'Green',   hex:'#28c46a' },
+  { key:'lime',    label:'Lime',    hex:'#88cc22' },
+  { key:'amber',   label:'Amber',   hex:'#e8a020' },
+  { key:'orange',  label:'Orange',  hex:'#e86030' },
+  { key:'red',     label:'Red',     hex:'#e83838' },
+  { key:'pink',    label:'Pink',    hex:'#e040a8' },
+  { key:'purple',  label:'Purple',  hex:'#9048e0' },
+  { key:'white',   label:'White',   hex:'#c8d0dc' },
+];
+
+const G_BASE = 80;
+let G_MULT = 2.0;
+let TRAIL_MAX = 200;
+let SIM_DURATION = 60;
+let SIM_SPEED = 1;
+let SIM_TIME = 0;
+let running = false;
+let tool = 'add';
+let selectedId = null;
+let planets = [];
+let nextId = 1;
+
+let explosions = [];
+
+// Scrub ghost: positions shown when hovering the timebar
+let ghostPositions = null; // [{x,y,radius,gem}] or null
+
+// Trajectory preview for selected planet
+let trajectoryPoints = null; // [[x,y],...] or null
+let trajectoryDirty = true;
+
+// ─────────────────────────────────────────────
+//  CANVAS
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  trajectoryDirty = true;
+}
+window.addEventListener('resize', resize);
+setTimeout(resize, 50);
+
+// ─────────────────────────────────────────────
+//  PLANET FACTORY
+// ─────────────────────────────────────────────
+function makePlanet(x, y) {
+  const gem = GEM_COLORS[Math.floor(Math.random() * GEM_COLORS.length)];
+  return {
+    id: nextId++,
+    name: `Body ${nextId - 1}`,
+    x, y,
+    vx: 0, vy: 0,
+    startX: x, startY: y,
+    startVx: 0, startVy: 0,
+    radius: 10,
+    mass: 200,
+    gem: gem.key,
+    trail: [],
+  };
+}
+
+function gemOf(key) { return GEM_COLORS.find(g => g.key === key) || GEM_COLORS[0]; }
+function isStatic(p) { return p.vx === 0 && p.vy === 0 && p.startVx === 0 && p.startVy === 0; }
+
+// ─────────────────────────────────────────────
+//  PHYSICS  (operates on arbitrary planet array)
+// ─────────────────────────────────────────────
+const SUBSTEPS = 4;
+
+function physicsStep(dt, pArr) {
+  pArr = pArr || planets;
+  const G = G_BASE * G_MULT;
+  const sub = dt / SUBSTEPS;
+
+  for (let s = 0; s < SUBSTEPS; s++) {
+    for (const p of pArr) {
+      if (isStatic(p)) continue;
+      let ax = 0, ay = 0;
+      for (const q of pArr) {
+        if (q.id === p.id) continue;
+        const dx = q.x - p.x, dy = q.y - p.y;
+        const r2 = dx * dx + dy * dy + 1;
+        const r  = Math.sqrt(r2);
+        const f  = G * q.mass / r2;
+        ax += f * dx / r;
+        ay += f * dy / r;
+      }
+      p.ax = ax; p.ay = ay;
+    }
+    for (const p of pArr) {
+      if (isStatic(p)) continue;
+      p.vx += p.ax * sub;
+      p.vy += p.ay * sub;
+      p.x  += p.vx * sub;
+      p.y  += p.vy * sub;
+    }
+  }
+
+  if (pArr === planets) {
+    for (const p of planets) {
+      if (isStatic(p)) continue;
+      p.trail.push([p.x, p.y]);
+      if (TRAIL_MAX > 0 && p.trail.length > TRAIL_MAX) p.trail.shift();
+      if (TRAIL_MAX === 0) p.trail = [];
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  TRAJECTORY PREVIEW  (for selected planet)
+// ─────────────────────────────────────────────
+function computeTrajectory() {
+  const sel = planets.find(p => p.id === selectedId);
+  if (!sel || running) { trajectoryPoints = null; return; }
+
+  // Clone all planets (shallow sim state only)
+  const clone = planets.map(p => ({
+    id: p.id, x: p.x, y: p.y, vx: p.vx, vy: p.vy,
+    mass: p.mass, radius: p.radius,
+    startVx: p.startVx, startVy: p.startVy,
+    ax: 0, ay: 0,
+  }));
+
+  const pts = [[sel.x, sel.y]];
+  const STEPS = 300;
+  const dt = 0.06;
+  const selClone = clone.find(p => p.id === selectedId);
+
+  for (let i = 0; i < STEPS; i++) {
+    const G = G_BASE * G_MULT;
+    for (const p of clone) {
+      if (isStatic(p)) continue;
+      let ax = 0, ay = 0;
+      for (const q of clone) {
+        if (q.id === p.id) continue;
+        const dx = q.x - p.x, dy = q.y - p.y;
+        const r2 = dx * dx + dy * dy + 1;
+        const r  = Math.sqrt(r2);
+        const f  = G * q.mass / r2;
+        ax += f * dx / r;
+        ay += f * dy / r;
+      }
+      p.ax = ax; p.ay = ay;
+    }
+    for (const p of clone) {
+      if (isStatic(p)) continue;
+      p.vx += p.ax * dt;
+      p.vy += p.ay * dt;
+      p.x  += p.vx * dt;
+      p.y  += p.vy * dt;
+    }
+    // record every other step
+    if (i % 2 === 0) pts.push([selClone.x, selClone.y]);
+
+    // stop if escaped way off screen
+    const W = canvas.width, H = canvas.height;
+    if (selClone.x < -W || selClone.x > W*2 || selClone.y < -H || selClone.y > H*2) break;
+  }
+
+  trajectoryPoints = pts;
+  trajectoryDirty = false;
+}
+
+// ─────────────────────────────────────────────
+//  TIMEBAR GHOST (scrub preview)
+// ─────────────────────────────────────────────
+function computeGhost(targetT) {
+  if (planets.length === 0) { ghostPositions = null; return; }
+
+  const clone = planets.map(p => ({
+    id: p.id, x: p.startX, y: p.startY,
+    vx: p.startVx, vy: p.startVy,
+    mass: p.mass, radius: p.radius, gem: p.gem,
+    startVx: p.startVx, startVy: p.startVy,
+    ax: 0, ay: 0,
+  }));
+
+  const step = 1 / 30;
+  let t = 0;
+  while (t < targetT) {
+    const dt = Math.min(step, targetT - t);
+    physicsStep(dt, clone);
+    t += dt;
+  }
+
+  ghostPositions = clone.map(p => ({ x: p.x, y: p.y, radius: p.radius, gem: p.gem }));
+}
+
+// ─────────────────────────────────────────────
+//  COLLISION + EXPLOSIONS
+// ─────────────────────────────────────────────
+function checkCollisions() {
+  const toRemove = new Set();
+  for (let i = 0; i < planets.length; i++) {
+    for (let j = i + 1; j < planets.length; j++) {
+      const a = planets[i], b = planets[j];
+      if (toRemove.has(a.id) || toRemove.has(b.id)) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < a.radius + b.radius) {
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const combinedMass = a.mass + b.mass;
+        const blastStr = Math.sqrt(combinedMass) * 3;
+        const blastR   = Math.max(a.radius, b.radius) * 5 + 60;
+        explosions.push({ x: mx, y: my, r: 0, maxR: blastR, alpha: 1, strength: blastStr, color: gemOf(a.gem).hex });
+        applyBlast(mx, my, blastStr, blastR, new Set([a.id, b.id]));
+        toRemove.add(a.id);
+        toRemove.add(b.id);
+      }
+    }
+  }
+  if (toRemove.size > 0) {
+    planets = planets.filter(p => !toRemove.has(p.id));
+    if (toRemove.has(selectedId)) { selectedId = null; clearEditor(); }
+    renderList();
+    trajectoryDirty = true;
+  }
+}
+
+function applyBlast(ex, ey, strength, blastR, excludeIds) {
+  for (const p of planets) {
+    if (isStatic(p) || excludeIds.has(p.id)) continue;
+    const dx = p.x - ex, dy = p.y - ey;
+    const dist = Math.hypot(dx, dy) || 1;
+    if (dist < blastR) {
+      const falloff = 1 - (dist / blastR);
+      const force   = strength * falloff * 60 / (p.mass + 1);
+      p.vx += (dx / dist) * force;
+      p.vy += (dy / dist) * force;
+    }
+  }
+}
+
+function updateExplosions(dt) {
+  for (const exp of explosions) {
+    const speed = exp.maxR * 2.2 * Math.pow(1 - exp.r / exp.maxR, 0.4);
+    exp.r += speed * dt;
+    exp.alpha = Math.max(0, 1 - (exp.r / exp.maxR));
+  }
+  explosions = explosions.filter(e => e.alpha > 0 && e.r < e.maxR + 10);
+}
+
+// ─────────────────────────────────────────────
+//  RESET
+// ─────────────────────────────────────────────
+function resetSim() {
+  SIM_TIME = 0;
+  explosions = [];
+  for (const p of planets) {
+    p.x  = p.startX; p.y  = p.startY;
+    p.vx = p.startVx; p.vy = p.startVy;
+    p.trail = [];
+  }
+  trajectoryDirty = true;
+  updateTimer();
+}
+
+// ─────────────────────────────────────────────
+//  RENDER
+// ─────────────────────────────────────────────
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.fillStyle = '#0c0d10';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 1;
+  const gs = 60;
+  for (let x = 0; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // trails
+  if (TRAIL_MAX > 0) {
+    for (const p of planets) {
+      if (isStatic(p) || p.trail.length < 2) continue;
+      const gem = gemOf(p.gem);
+      for (let i = 1; i < p.trail.length; i++) {
+        const t = i / p.trail.length;
+        ctx.beginPath();
+        ctx.moveTo(p.trail[i-1][0], p.trail[i-1][1]);
+        ctx.lineTo(p.trail[i][0], p.trail[i][1]);
+        ctx.strokeStyle = gem.hex;
+        ctx.globalAlpha = t * 0.35;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // trajectory preview (paused, selected planet)
+  if (!running && trajectoryPoints && trajectoryPoints.length > 1) {
+    const sel = planets.find(p => p.id === selectedId);
+    if (sel) {
+      const gem = gemOf(sel.gem);
+      ctx.save();
+      ctx.setLineDash([4, 5]);
+      ctx.lineWidth = 1;
+      for (let i = 1; i < trajectoryPoints.length; i++) {
+        const t = i / trajectoryPoints.length;
+        ctx.beginPath();
+        ctx.moveTo(trajectoryPoints[i-1][0], trajectoryPoints[i-1][1]);
+        ctx.lineTo(trajectoryPoints[i][0], trajectoryPoints[i][1]);
+        ctx.strokeStyle = gem.hex;
+        ctx.globalAlpha = (1 - t) * 0.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  // velocity arrows (paused)
+  if (!running) {
+    for (const p of planets) {
+      if (isStatic(p)) continue;
+      drawArrow(p.x, p.y, p.startVx, p.startVy, gemOf(p.gem).hex, p.id === selectedId);
+    }
+  }
+
+  // explosions
+  for (const exp of explosions) {
+    if (exp.r < exp.maxR * 0.15) {
+      const flashA = (1 - exp.r / (exp.maxR * 0.15)) * 0.5;
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, exp.r * 3 + 10, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,240,200,${flashA})`;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(exp.x, exp.y, exp.r, 0, Math.PI * 2);
+    ctx.strokeStyle = exp.color;
+    ctx.globalAlpha = exp.alpha * 0.85;
+    ctx.lineWidth = Math.max(1, 3 * (1 - exp.r / exp.maxR));
+    ctx.stroke();
+    const r2 = exp.r * 0.72;
+    if (r2 > 2) {
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, r2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = exp.alpha * 0.25;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // planets
+  for (const p of planets) drawPlanet(p, p.id === selectedId);
+
+  // ghost overlay (timebar hover)
+  if (ghostPositions) {
+    for (const g of ghostPositions) {
+      const gem = gemOf(g.gem);
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.radius, 0, Math.PI * 2);
+      ctx.fillStyle = gem.hex;
+      ctx.fill();
+      // dashed ring
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.radius + 3, 0, Math.PI * 2);
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = gem.hex;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function drawArrow(x, y, vx, vy, color, bright) {
+  const len = Math.hypot(vx, vy);
+  if (len < 1) return;
+  const scale = 0.4;
+  const ex = x + vx * scale, ey = y + vy * scale;
+  const angle = Math.atan2(vy, vx);
+  const hSize = 6;
+  ctx.save();
+  ctx.globalAlpha = bright ? 0.85 : 0.45;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = bright ? 1.5 : 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - hSize * Math.cos(angle - 0.4), ey - hSize * Math.sin(angle - 0.4));
+  ctx.lineTo(ex - hSize * Math.cos(angle + 0.4), ey - hSize * Math.sin(angle + 0.4));
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawPlanet(p, selected) {
+  const gem = gemOf(p.gem);
+  const x = p.x, y = p.y, r = p.radius;
+  const stat = isStatic(p);
+
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = gem.hex;
+  ctx.fill();
+
+  if (selected) {
+    ctx.beginPath();
+    ctx.arc(x, y, r + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.8;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  if (stat) {
+    ctx.beginPath();
+    ctx.arc(x, y, r + (selected ? 8 : 4), 0, Math.PI * 2);
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = '#e8a020';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.beginPath();
+  ctx.arc(x - r * 0.28, y - r * 0.28, r * 0.22, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.fill();
+}
+
+// ─────────────────────────────────────────────
+//  LOOP
+// ─────────────────────────────────────────────
+let lastTs = null;
+function loop(ts) {
+  if (lastTs === null) lastTs = ts;
+  const rawDt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  if (running) {
+    const dt = rawDt * SIM_SPEED;
+    physicsStep(dt);
+    checkCollisions();
+    updateExplosions(dt);
+    SIM_TIME = Math.min(SIM_TIME + dt, SIM_DURATION);
+    updateTimer();
+    if (SIM_TIME >= SIM_DURATION) {
+      running = false;
+      document.getElementById('btn-playpause').textContent = '▶ Play';
+    }
+  } else {
+    updateExplosions(rawDt);
+    // recompute trajectory when paused & dirty
+    if (trajectoryDirty && selectedId !== null && !ghostPositions) {
+      computeTrajectory();
+    }
+  }
+
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ─────────────────────────────────────────────
+//  TIMER UI
+// ─────────────────────────────────────────────
+function updateTimer() {
+  const pct = SIM_DURATION > 0 ? (SIM_TIME / SIM_DURATION) * 100 : 0;
+  document.getElementById('timer-fill').style.width = pct + '%';
+  document.getElementById('timer-label').textContent =
+    SIM_TIME.toFixed(1) + ' / ' + SIM_DURATION.toFixed(0) + ' s';
+}
+
+const timerStrip = document.getElementById('timer-strip');
+const timerCursor = document.getElementById('timer-cursor');
+
+timerStrip.addEventListener('mousemove', e => {
+  const rect = timerStrip.getBoundingClientRect();
+  const pct  = (e.clientX - rect.left) / rect.width;
+  const targetT = pct * SIM_DURATION;
+  timerCursor.style.left = (pct * 100) + '%';
+  computeGhost(targetT);
+});
+
+timerStrip.addEventListener('mouseleave', () => {
+  ghostPositions = null;
+  timerCursor.style.left = '0';
+});
+
+timerStrip.addEventListener('click', e => {
+  const rect = timerStrip.getBoundingClientRect();
+  const pct  = (e.clientX - rect.left) / rect.width;
+  const targetT = pct * SIM_DURATION;
+  resetSim();
+  const step = 1/60;
+  let t = 0;
+  while (t < targetT) {
+    const dt = Math.min(step, targetT - t);
+    physicsStep(dt);
+    checkCollisions();
+    t += dt;
+  }
+  SIM_TIME = targetT;
+  ghostPositions = null;
+  updateTimer();
+});
+
+document.getElementById('dur-input').addEventListener('change', e => {
+  SIM_DURATION = Math.max(5, parseFloat(e.target.value) || 60);
+  updateTimer();
+});
+
+// ─────────────────────────────────────────────
+//  SPEED SLIDER
+// ─────────────────────────────────────────────
+document.getElementById('speed-sl').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  SIM_SPEED = Math.pow(2, v);
+  const label = SIM_SPEED < 1 ? (1/SIM_SPEED).toFixed(1)+'×↓' : SIM_SPEED.toFixed(SIM_SPEED < 2 ? 1 : 0)+'×';
+  document.getElementById('speed-val').textContent = label;
+});
+
+// ─────────────────────────────────────────────
+//  PLAY / PAUSE / RESET
+// ─────────────────────────────────────────────
+document.getElementById('btn-playpause').addEventListener('click', () => {
+  if (SIM_TIME >= SIM_DURATION) resetSim();
+  running = !running;
+  lastTs = null;
+  document.getElementById('btn-playpause').textContent = running ? '⏸ Pause' : '▶ Play';
+  if (!running) trajectoryDirty = true;
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  running = false;
+  document.getElementById('btn-playpause').textContent = '▶ Play';
+  resetSim();
+  trajectoryDirty = true;
+});
+
+// ─────────────────────────────────────────────
+//  SIM SLIDERS
+// ─────────────────────────────────────────────
+document.getElementById('grav-sl').addEventListener('input', e => {
+  G_MULT = parseFloat(e.target.value);
+  document.getElementById('grav-val').textContent = G_MULT.toFixed(1);
+  trajectoryDirty = true;
+});
+document.getElementById('trail-sl').addEventListener('input', e => {
+  TRAIL_MAX = parseInt(e.target.value);
+  document.getElementById('trail-val').textContent = TRAIL_MAX;
+  if (TRAIL_MAX === 0) planets.forEach(p => p.trail = []);
+});
+
+// ─────────────────────────────────────────────
+//  TOOLS
+// ─────────────────────────────────────────────
+document.getElementById('tool-add').addEventListener('click', () => setTool('add'));
+document.getElementById('tool-drag').addEventListener('click', () => setTool('drag'));
+
+function setTool(t) {
+  tool = t;
+  document.getElementById('tool-add').classList.toggle('active', t === 'add');
+  document.getElementById('tool-drag').classList.toggle('active', t === 'drag');
+  canvas.classList.toggle('drag-mode', t === 'drag');
+}
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!confirm('Clear all planets?')) return;
+  planets = []; selectedId = null; explosions = [];
+  trajectoryPoints = null; ghostPositions = null;
+  renderList(); clearEditor();
+});
+
+// ─────────────────────────────────────────────
+//  CANVAS MOUSE
+// ─────────────────────────────────────────────
+let dragging = null, dragOffX = 0, dragOffY = 0;
+let velDragging = null;
+
+canvas.addEventListener('mousedown', e => {
+  const { x, y } = canvasXY(e);
+
+  if (tool === 'drag') {
+    const hit = hitTest(x, y);
+    if (hit) {
+      dragging = hit;
+      dragOffX = hit.x - x; dragOffY = hit.y - y;
+      canvas.classList.add('drag-move');
+      selectPlanet(hit.id);
+    }
+    return;
+  }
+
+  if (tool === 'add') {
+    // check if clicking the velocity arrow tip of any planet
+    for (const p of planets) {
+      if (isStatic(p)) continue;
+      const ex = p.x + p.startVx * 0.4, ey = p.y + p.startVy * 0.4;
+      if (Math.hypot(ex - x, ey - y) < 10) { velDragging = p; return; }
+    }
+
+    const hit = hitTest(x, y);
+    if (hit) {
+      // click on existing planet → select
+      selectPlanet(hit.id);
+      return;
+    }
+
+    // click on empty space → place planet (only when paused)
+    if (!running) {
+      const p = makePlanet(x, y);
+      planets.push(p);
+      selectPlanet(p.id);
+      renderList();
+      trajectoryDirty = true;
+    }
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  const { x, y } = canvasXY(e);
+
+  if (dragging) {
+    if (!running) {
+      dragging.x = x + dragOffX; dragging.y = y + dragOffY;
+      dragging.startX = dragging.x; dragging.startY = dragging.y;
+      trajectoryDirty = true;
+    }
+    return;
+  }
+
+  if (velDragging) {
+    const vx = (x - velDragging.x) / 0.4;
+    const vy = (y - velDragging.y) / 0.4;
+    velDragging.startVx = vx; velDragging.startVy = vy;
+    velDragging.vx = vx; velDragging.vy = vy;
+    trajectoryDirty = true;
+    return;
+  }
+
+  // tooltip
+  const hit = hitTest(x, y);
+  const tip = document.getElementById('tooltip');
+  if (hit) {
+    const gem = gemOf(hit.gem);
+    const stat = isStatic(hit);
+    tip.innerHTML =
+      `<b style="color:${gem.hex}">${hit.name}</b><br>` +
+      `Mass: ${hit.mass}  r: ${hit.radius}<br>` +
+      (stat ? '<span style="color:#e8a020">⬡ ANCHOR</span>' : `|v|: ${Math.hypot(hit.vx,hit.vy).toFixed(1)} px/s`);
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top  = (e.clientY - 10) + 'px';
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mouseup', () => {
+  dragging = null; velDragging = null;
+  canvas.classList.remove('drag-move');
+});
+canvas.addEventListener('mouseleave', () => {
+  document.getElementById('tooltip').style.display = 'none';
+  dragging = null; velDragging = null;
+});
+
+function canvasXY(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function hitTest(x, y) {
+  for (let i = planets.length - 1; i >= 0; i--) {
+    const p = planets[i];
+    if (Math.hypot(p.x - x, p.y - y) <= p.radius + 4) return p;
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
+//  PLANET LIST
+// ─────────────────────────────────────────────
+function renderList() {
+  const list = document.getElementById('planet-list');
+  list.innerHTML = '';
+  for (const p of planets) {
+    const gem  = gemOf(p.gem);
+    const stat = isStatic(p);
+    const el   = document.createElement('div');
+    el.className = 'pitem' + (p.id === selectedId ? ' selected' : '');
+    el.innerHTML =
+      `<div class="pitem-dot" style="background:${gem.hex}"></div>` +
+      `<span class="pitem-name">${p.name}</span>` +
+      `<span class="pitem-badge">${stat ? '<span class="pitem-static">ANCHOR</span>' : 'm:'+p.mass}</span>`;
+    el.addEventListener('click', () => selectPlanet(p.id));
+    list.appendChild(el);
+  }
+}
+
+function selectPlanet(id) {
+  selectedId = id;
+  trajectoryDirty = true;
+  renderList();
+  const p = planets.find(q => q.id === id);
+  if (!p) { clearEditor(); return; }
+  showEditor(p);
+}
+
+// ─────────────────────────────────────────────
+//  EDITOR
+// ─────────────────────────────────────────────
+function buildGemSwatches() {
+  const row = document.getElementById('gem-row');
+  row.innerHTML = '';
+  for (const gem of GEM_COLORS) {
+    const sw = document.createElement('div');
+    sw.className = 'gem-swatch';
+    sw.dataset.key = gem.key;
+    sw.title = gem.label;
+    sw.style.background = gem.hex;
+    sw.addEventListener('click', () => {
+      const p = selPlanet(); if (!p) return;
+      p.gem = gem.key;
+      renderList();
+      document.querySelectorAll('.gem-swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+    });
+    row.appendChild(sw);
+  }
+}
+buildGemSwatches();
+
+function selPlanet() { return planets.find(p => p.id === selectedId) || null; }
+
+function showEditor(p) {
+  document.getElementById('editor-title').textContent = 'Edit Body';
+  document.getElementById('editor-body').style.display = '';
+  document.getElementById('e-name').value    = p.name;
+  document.getElementById('e-radius').value  = p.radius;
+  document.getElementById('e-radius-val').textContent = p.radius;
+  document.getElementById('e-mass').value    = p.mass;
+  document.getElementById('e-mass-val').textContent   = p.mass;
+  document.querySelectorAll('.gem-swatch').forEach(s =>
+    s.classList.toggle('active', s.dataset.key === p.gem));
+}
+
+function clearEditor() {
+  document.getElementById('editor-title').textContent = '— select planet —';
+  document.getElementById('editor-body').style.display = 'none';
+}
+
+document.getElementById('e-name').addEventListener('input', e => {
+  const p = selPlanet(); if (!p) return;
+  p.name = e.target.value; renderList();
+});
+document.getElementById('e-radius').addEventListener('input', e => {
+  const p = selPlanet(); if (!p) return;
+  p.radius = parseInt(e.target.value);
+  document.getElementById('e-radius-val').textContent = p.radius;
+  trajectoryDirty = true;
+});
+document.getElementById('e-mass').addEventListener('input', e => {
+  const p = selPlanet(); if (!p) return;
+  p.mass = parseInt(e.target.value);
+  document.getElementById('e-mass-val').textContent = p.mass;
+  trajectoryDirty = true;
+});
+document.getElementById('btn-del-planet').addEventListener('click', () => {
+  planets = planets.filter(p => p.id !== selectedId);
+  selectedId = null; trajectoryPoints = null; clearEditor(); renderList();
+});
+
+// ─────────────────────────────────────────────
+//  EXPORT
+// ─────────────────────────────────────────────
+document.getElementById('btn-export').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'orbital_map.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+  const config = {
+    duration: SIM_DURATION, gravity: G_MULT,
+    planets: planets.map(p => ({
+      name: p.name, gem: p.gem, radius: p.radius, mass: p.mass,
+      x: Math.round(p.startX), y: Math.round(p.startY),
+      vx: +p.startVx.toFixed(3), vy: +p.startVy.toFixed(3),
+      static: isStatic(p),
+    }))
+  };
+  const jb = document.createElement('a');
+  jb.download = 'orbital_map.json';
+  jb.href = 'data:application/json,' + encodeURIComponent(JSON.stringify(config, null, 2));
+  setTimeout(() => jb.click(), 200);
+});
+
+// ─────────────────────────────────────────────
+//  DEFAULT SCENE
+// ─────────────────────────────────────────────
+function loadDefault() {
+  const cx = canvas.width  * 0.5 || 400;
+  const cy = canvas.height * 0.5 || 300;
+
+  const star = makePlanet(cx, cy);
+  star.name = 'Star'; star.gem = 'amber'; star.radius = 26; star.mass = 18000;
+  star.startVx = 0; star.startVy = 0; star.vx = 0; star.vy = 0;
+  planets.push(star);
+
+  function addPlanet(name, gem, orb, angle, speed, r, m) {
+    const p = makePlanet(cx + Math.cos(angle) * orb, cy + Math.sin(angle) * orb);
+    p.name = name; p.gem = gem; p.radius = r; p.mass = m;
+    p.startVx = -Math.sin(angle) * speed; p.startVy = Math.cos(angle) * speed;
+    p.vx = p.startVx; p.vy = p.startVy;
+    planets.push(p);
+  }
+
+  addPlanet('Mercury', 'white',   90,  0.7, 155, 5,   30);
+  addPlanet('Venus',   'orange', 145,  2.1, 120, 8,   80);
+  addPlanet('Earth',   'cyan',   200,  4.0, 100, 9,  100);
+  addPlanet('Mars',    'red',    265,  1.3,  87, 7,   60);
+  addPlanet('Jupiter', 'blue',   360,  5.5,  68, 18, 2000);
+
+  renderList();
+  trajectoryDirty = true;
+}
+setTimeout(loadDefault, 80);
+</script>
+</body>
+</html>

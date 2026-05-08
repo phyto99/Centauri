@@ -5,6 +5,7 @@ var current_camera_index = 0
 var team_color = "" # New variable to store the current team's color
 
 func _ready():
+	add_to_group("camera_manager")
 	# Find all players in the scene
 	call_deferred("initialize_cameras")
 
@@ -66,19 +67,27 @@ func set_active_camera(index):
 	current_camera_index = index
 	
 	# Set the team color based on the player's team
-	# You'll need to adapt this part based on how your player nodes store team information
 	if players[index].has_method("get_team_color"):
-		# If the player has a method to get its team color
 		team_color = players[index].get_team_color()
 	elif players[index].has_meta("team_color"):
-		# If the player has metadata for team color
 		team_color = players[index].get_meta("team_color")
 	elif players[index].get("team_color") != null:
-		# If the player has a team_color property
 		team_color = players[index].team_color
 	else:
-		# Fallback: assign team colors based on index
 		var colors = ["cyan", "magenta", "lime", "gold"]
 		team_color = colors[index % colors.size()]
 	
 	print("Switched to player " + str(index + 1) + "'s view, Team color: " + team_color)
+	_refresh_planet_sprites()
+
+# Update every planet's outline sprite based on whether the active ship is landed on it.
+func _refresh_planet_sprites() -> void:
+	if players.is_empty() or current_camera_index >= players.size():
+		return
+	var active_ship = players[current_camera_index]
+	var active_landed = active_ship.get("landed_planet")
+	for planet in get_tree().get_nodes_in_group("planets"):
+		if planet.get("is_sun"):
+			continue
+		if planet.has_method("set_player_landed"):
+			planet.set_player_landed(active_landed == planet)

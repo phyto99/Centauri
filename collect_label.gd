@@ -23,6 +23,9 @@ func open(yield_count: int) -> void:
 	progress.max_value = yield_count
 	progress.value = 0
 	_refresh_labels()
+	# Center on screen
+	var vp := get_viewport().get_visible_rect().size
+	position = (vp - Vector2(490, 238)) * 0.5
 	visible = true
 
 func _on_slider_changed(v: float) -> void:

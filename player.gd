@@ -90,8 +90,7 @@ func _on_planet_contact(body: Node) -> void:
 	landed_planet = body
 	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
-	if body.has_method("set_player_landed"):
-		body.set_player_landed(true)
+	_notify_camera_manager()
 
 func _detach() -> void:
 	if landed_planet == null:
@@ -104,6 +103,7 @@ func _detach() -> void:
 	if landed_planet.has_method("set_player_landed"):
 		landed_planet.set_player_landed(false)
 	landed_planet = null
+	_notify_camera_manager()
 
 func set_team_color(id: int) -> void:
 	var mat = ship_sprite.material
@@ -158,6 +158,11 @@ func add_food_from_source(amount: float, source_team: int) -> void:
 	food_by_source[source_team] = food_by_source.get(source_team, 0.0) + amount
 	food_amount += amount
 	emit_signal("food_inventory_changed", team_id)
+
+func _notify_camera_manager() -> void:
+	var cm := get_tree().get_first_node_in_group("camera_manager")
+	if cm and cm.has_method("_refresh_planet_sprites"):
+		cm._refresh_planet_sprites()
 
 func collect_food(amount: float) -> void:
 	add_food_from_source(amount, team_id)

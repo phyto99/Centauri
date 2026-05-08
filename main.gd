@@ -3,16 +3,340 @@ extends Node2D
 @export var player_scene: PackedScene
 @export var player_count: int = 5
 
+# ── N-body constants (must match mapmaker.gd) ─────────────────────────────────
+const G         := 80.0 * 2.0 * 100.0
+const SUBSTEPS  := 4
+const SIM_STEP  := 0.016
+
+# ── Session state ─────────────────────────────────────────────────────────────
+var _session_duration: float = 120.0   # seconds
+var _session_time:     float = 0.0
+var _running:          bool  = false
+var _sim_accumulator:  float = 0.0
+var _start_btn:        Button = null
+
+# Per-planet velocity store (instance_id → Vector2)
+# Planets are frozen; we drive them manually like the mapmaker
+var _velocities: Dictionary = {}
+
+# Explosion rings [{pos, radius, max_radius, alpha}]
+var _explosions: Array = []
+
+# UI refs
+var _timebar_sprite:   Sprite2D = null
+var _time_label:       Label    = null
+var _session_cl:       CanvasLayer = null
+
 func _ready() -> void:
-	spawn_random_planets()
+	_build_session_ui()
 	spawn_players()
 
+# ── Session UI ────────────────────────────────────────────────────────────────
+func _build_session_ui() -> void:
+	_session_cl = CanvasLayer.new()
+	_session_cl.layer = 20
+	add_child(_session_cl)
+
+	# Find the existing timebar sprite from the scene and drive it from here
+	# It's at UI/CanvasLayer/Timebar — look it up after ready
+	call_deferred("_init_timebar_sprite")
+
+	# Settings panel — anchored top-right, grows leftward
+	var panel := PanelContainer.new()
+	panel.anchor_left   = 1.0
+	panel.anchor_right  = 1.0
+	panel.anchor_top    = 0.0
+	panel.anchor_bottom = 0.0
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.offset_right  = -8.0
+	panel.offset_top    = 30.0   # below timebar
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_session_cl.add_child(panel)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_session_cl.add_child(panel)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_left","margin_right","margin_top","margin_bottom"]:
+		margin.add_theme_constant_override(side, 8)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	margin.add_child(vbox)
+
+	# Import Map
+	var import_btn := Button.new()
+	import_btn.text = "Import Map"
+	import_btn.pressed.connect(_on_import_pressed)
+	vbox.add_child(import_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# Session duration
+	var dur_row := HBoxContainer.new()
+	dur_row.add_theme_constant_override("separation", 4)
+	vbox.add_child(dur_row)
+	var dur_lbl := Label.new()
+	dur_lbl.text = "Duration"
+	dur_lbl.add_theme_font_size_override("font_size", 12)
+	dur_row.add_child(dur_lbl)
+	var dur_input := LineEdit.new()
+	dur_input.text = "120"
+	dur_input.custom_minimum_size = Vector2(52, 0)
+	dur_input.placeholder_text = "s"
+	dur_row.add_child(dur_input)
+	var dur_s := Label.new()
+	dur_s.text = "s"
+	dur_s.add_theme_font_size_override("font_size", 12)
+	dur_row.add_child(dur_s)
+	dur_input.text_submitted.connect(func(t: String):
+		if t.is_valid_float():
+			_session_duration = maxf(10.0, float(t))
+			_update_timebar())
+	dur_input.focus_exited.connect(func():
+		if dur_input.text.is_valid_float():
+			_session_duration = maxf(10.0, float(dur_input.text))
+			_update_timebar())
+
+	# Time label
+	_time_label = Label.new()
+	_time_label.text = "0.0 / 120 s"
+	_time_label.add_theme_font_size_override("font_size", 12)
+	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(_time_label)
+
+	vbox.add_child(HSeparator.new())
+
+	# Start button
+	_start_btn = Button.new()
+	_start_btn.text = "▶ Start"
+	_start_btn.pressed.connect(_on_start_pressed)
+	vbox.add_child(_start_btn)
+
+# ── Import from clipboard ─────────────────────────────────────────────────────
+func _on_import_pressed() -> void:
+	var clip := DisplayServer.clipboard_get()
+	if clip.is_empty():
+		push_warning("Clipboard is empty")
+		return
+	var json := JSON.new()
+	if json.parse(clip) != OK:
+		push_warning("Clipboard does not contain valid JSON")
+		return
+	var raw = json.get_data()
+	if not raw is Dictionary:
+		push_warning("JSON root is not a Dictionary")
+		return
+	var data: Dictionary = raw as Dictionary
+	var planets_data: Array = data.get("planets", []) as Array
+
+	# Clear existing non-sun planets
+	for planet in get_tree().get_nodes_in_group("planets"):
+		if is_instance_valid(planet) and not planet.get("is_sun"):
+			_velocities.erase(planet.get_instance_id())
+			planet.queue_free()
+	await get_tree().process_frame
+
+	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
+	if not sun:
+		push_error("No sun found")
+		return
+
+	for pd in planets_data:
+		var planet := RigidBody2D.new()
+		planet.set_script(load("res://PlanetBuilder.gd"))
+		planet.sprite_scene          = sun.sprite_scene
+		planet.claim_stamp_scene     = sun.claim_stamp_scene
+		planet.cultivate_stamp_scene = sun.cultivate_stamp_scene
+		planet.current_size          = int(pd.get("size", 7))
+		planet.mass                  = float(pd.get("mass", 50.0))
+		planet.planet_color_index    = int(pd.get("color_idx", 2))
+		planet.freeze                = true
+		planet.freeze_mode           = RigidBody2D.FREEZE_MODE_STATIC
+		add_child(planet)
+		planet.position = Vector2(float(pd.get("pos_x", 0.0)), float(pd.get("pos_y", 0.0)))
+		planet.apply_appearance()
+		var vel := Vector2(float(pd.get("vel_x", 0.0)), float(pd.get("vel_y", 0.0)))
+		_velocities[planet.get_instance_id()] = vel
+
+	_session_time = 0.0
+	_running = false   # wait for Start button
+	_update_timebar()
+	if _start_btn:
+		_start_btn.text = "▶ Start"
+
+func _on_start_pressed() -> void:
+	if not _running:
+		_running = true
+		if _start_btn:
+			_start_btn.text = "⏸ Pause"
+	else:
+		_running = false
+		if _start_btn:
+			_start_btn.text = "▶ Resume"
+
+# ── N-body physics ────────────────────────────────────────────────────────────
+func _is_anchor(planet: Node) -> bool:
+	if planet.get("is_sun"):
+		return true
+	return _velocities.get(planet.get_instance_id(), Vector2.ZERO).length_squared() < 0.001
+
+func _nbody_step(bodies: Array, dt: float) -> void:
+	var sub_dt: float = dt / SUBSTEPS
+	for _s in range(SUBSTEPS):
+		for i in range(bodies.size()):
+			var a: Dictionary = bodies[i]
+			if a.anchor:
+				continue
+			var ax: float = 0.0
+			var ay: float = 0.0
+			for j in range(bodies.size()):
+				if i == j:
+					continue
+				var b: Dictionary = bodies[j]
+				var dx: float = b.pos.x - a.pos.x
+				var dy: float = b.pos.y - a.pos.y
+				var r2: float = dx * dx + dy * dy + 1.0
+				var r: float  = sqrt(r2)
+				var f: float  = G * b.mass / r2
+				ax += f * dx / r
+				ay += f * dy / r
+			a.acc = Vector2(ax, ay)
+		for i in range(bodies.size()):
+			var a: Dictionary = bodies[i]
+			if a.anchor:
+				continue
+			a.vel += a.acc * sub_dt
+			a.pos += a.vel * sub_dt
+
+func _check_collisions(bodies: Array) -> void:
+	var to_remove: Array = []
+	for i in range(bodies.size()):
+		for j in range(i + 1, bodies.size()):
+			var a: Dictionary = bodies[i]
+			var b: Dictionary = bodies[j]
+			if not is_instance_valid(a.node) or not is_instance_valid(b.node):
+				continue
+			if a.node in to_remove or b.node in to_remove:
+				continue
+			var dist: float = a.pos.distance_to(b.pos)
+			var sum_r: float = (a.node.get("surface_radius") if a.node.get("surface_radius") else 80.0) \
+							 + (b.node.get("surface_radius") if b.node.get("surface_radius") else 80.0)
+			if dist < sum_r:
+				var mid: Vector2 = (a.pos + b.pos) * 0.5
+				var blast_r: float = max(sum_r * 4.0, 400.0)
+				var blast_str: float = sqrt(a.mass + b.mass) * 400.0
+				_explosions.append({"pos": mid, "radius": 0.0, "max_radius": blast_r, "alpha": 1.0})
+				for k in range(bodies.size()):
+					var c: Dictionary = bodies[k]
+					if c.anchor or c.node == a.node or c.node == b.node:
+						continue
+					var to_c: Vector2 = c.pos - mid
+					var d: float = to_c.length()
+					if d < blast_r and d > 1.0:
+						var falloff: float = 1.0 - (d / blast_r)
+						_velocities[c.id] = _velocities.get(c.id, Vector2.ZERO) \
+							+ to_c.normalized() * blast_str * falloff / (c.mass + 1.0)
+				if not a.node.get("is_sun"):
+					to_remove.append(a.node)
+				if not b.node.get("is_sun"):
+					to_remove.append(b.node)
+	for node in to_remove:
+		if is_instance_valid(node):
+			_velocities.erase(node.get_instance_id())
+			node.queue_free()
+
+# ── Process ───────────────────────────────────────────────────────────────────
+func _process(delta: float) -> void:
+	if not _running:
+		return
+
+	# Update explosions
+	for exp in _explosions:
+		exp.radius += exp.max_radius * 2.2 * delta
+		exp.alpha = max(0.0, 1.0 - (exp.radius / exp.max_radius))
+	_explosions = _explosions.filter(func(e): return e.alpha > 0.0 and e.radius < e.max_radius)
+
+	# N-body sim
+	_sim_accumulator += delta
+	while _sim_accumulator >= SIM_STEP:
+		_sim_accumulator -= SIM_STEP
+		var bodies: Array = []
+		for planet in get_tree().get_nodes_in_group("planets"):
+			if not is_instance_valid(planet):
+				continue
+			var pid: int = planet.get_instance_id()
+			bodies.append({
+				"node":   planet,
+				"id":     pid,
+				"pos":    Vector2(planet.position),
+				"vel":    Vector2(_velocities.get(pid, Vector2.ZERO)),
+				"mass":   float(planet.mass),
+				"anchor": _is_anchor(planet),
+				"acc":    Vector2.ZERO,
+			})
+		_nbody_step(bodies, SIM_STEP)
+		for b in bodies:
+			if b.anchor:
+				continue
+			b.node.position = b.pos
+			_velocities[b.id] = b.vel
+		_check_collisions(bodies)
+
+	_session_time = min(_session_time + delta, _session_duration)
+	_update_timebar()
+	if _session_time >= _session_duration:
+		_running = false
+
+	queue_redraw()
+
+func _init_timebar_sprite() -> void:
+	# Find the Timebar sprite in the scene and stretch it to viewport width
+	var tb: Node = get_node_or_null("UI/CanvasLayer/Timebar")
+	if tb and tb is Sprite2D:
+		_timebar_sprite = tb as Sprite2D
+		# Scale to fill viewport width
+		var vp_w: float = get_viewport().get_visible_rect().size.x
+		var tex_w: float = _timebar_sprite.texture.get_width() if _timebar_sprite.texture else 240.0
+		_timebar_sprite.scale.x = vp_w / tex_w
+		_timebar_sprite.position.x = vp_w * 0.5
+		# Start at full (progress=1 means fully visible, we'll count down)
+		_set_timebar_progress(1.0)
+
+func _set_timebar_progress(value: float) -> void:
+	if _timebar_sprite and _timebar_sprite.material is ShaderMaterial:
+		_timebar_sprite.material.set_shader_parameter("progress", value)
+
+func _update_timebar() -> void:
+	var progress: float = 1.0 - (_session_time / _session_duration) if _session_duration > 0 else 1.0
+	_set_timebar_progress(progress)
+	if _time_label:
+		_time_label.text = "%.0f / %d s" % [_session_time, int(_session_duration)]
+
+# ── Draw explosions ───────────────────────────────────────────────────────────
+func _draw() -> void:
+	if _explosions.is_empty():
+		return
+	# Get current camera zoom for screen-space thickness
+	var inv_z: float = 1.0
+	for ship in get_tree().get_nodes_in_group("players"):
+		if not is_instance_valid(ship):
+			continue
+		var cam := ship.get_node_or_null("Camera2D")
+		if cam and cam.enabled:
+			inv_z = 1.0 / cam.zoom.x
+			break
+	for exp in _explosions:
+		var thickness: float = (2.0 + 18.0 * (1.0 - exp.alpha)) * inv_z
+		draw_arc(exp.pos, exp.radius, 0.0, TAU, 64,
+				Color(1.0, 1.0, 1.0, exp.alpha * 0.9), thickness)
+
+# ── Spawn helpers ─────────────────────────────────────────────────────────────
 func spawn_players() -> void:
-	var sun = get_tree().get_nodes_in_group("sun_planet").front()
+	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
 	if not sun or not player_scene:
 		return
 
-	# Derive how far the ship's back edge is from its origin
 	var back_dist := 95.0
 	var probe := player_scene.instantiate()
 	var cpoly := probe.get_node_or_null("CollisionPolygon2D")
@@ -41,7 +365,7 @@ func spawn_players() -> void:
 		p.rotation = angle
 
 func spawn_random_planets() -> void:
-	var sun = get_tree().get_nodes_in_group("sun_planet").front()
+	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
 	if not sun:
 		return
 	var rng := RandomNumberGenerator.new()
@@ -51,8 +375,8 @@ func spawn_random_planets() -> void:
 		var dist  := rng.randf_range(500.0, 1000.0)
 		var planet := RigidBody2D.new()
 		planet.set_script(load("res://PlanetBuilder.gd"))
-		planet.sprite_scene       = sun.sprite_scene
-		planet.claim_stamp_scene  = sun.claim_stamp_scene
+		planet.sprite_scene          = sun.sprite_scene
+		planet.claim_stamp_scene     = sun.claim_stamp_scene
 		planet.cultivate_stamp_scene = sun.cultivate_stamp_scene
 		planet.current_size = rng.randi_range(7, 60)
 		planet.position     = Vector2.from_angle(angle) * dist
