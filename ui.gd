@@ -8,10 +8,7 @@ extends Control
 
 
 func _ready():
-	size_slider.value = builder.current_size
-	size_label.text = str(builder.current_size)  # Set initial label text
-	size_slider.connect("value_changed", _on_size_changed)
-	size_label.add_theme_font_size_override("font_size", 240)
+	add_to_group("ui_controller")
 		# Connect button signals
 	claim_button.pressed.connect(_on_claim_pressed)
 	cultivate_button.pressed.connect(_on_cultivate_pressed)
@@ -20,6 +17,13 @@ func _ready():
 	
 	# Set initial button states
 	_update_button_states("none")
+# Called by camera_manager when the active player changes
+func set_team_color(color: Color) -> void:
+	for btn in [claim_button, cultivate_button, collect_button]:
+		btn.add_theme_color_override("icon_normal_color", color)
+		btn.add_theme_color_override("icon_hover_color", color)
+		btn.add_theme_color_override("icon_pressed_color", color)
+		btn.add_theme_color_override("icon_focus_color", color)
 
 func _on_size_changed(value: float):
 	builder.current_size = int(value)

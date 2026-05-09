@@ -61,17 +61,6 @@ claim_button = NodePath("CanvasLayer/Claim")
 cultivate_button = NodePath("CanvasLayer/Cultivate")
 collect_button = NodePath("CanvasLayer/Collect")
 
-[node name="SizeSlider" type="HSlider" parent="UI"]
-layout_mode = 0
-offset_right = 2205.0
-offset_bottom = 32.0
-max_value = 301.0
-
-[node name="SizeLabel" type="Label" parent="UI"]
-layout_mode = 0
-offset_right = 40.0
-offset_bottom = 23.0
-
 [node name="CanvasLayer" type="CanvasLayer" parent="UI"]
 
 [node name="Claim" type="Button" parent="UI/CanvasLayer"]

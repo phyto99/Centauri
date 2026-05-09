@@ -54,6 +54,7 @@ func _ready() -> void:
 	_setup_land_detector()
 	if not is_instance_valid(fuel_bar):
 		_create_fuel_bar()
+	fuel_bar.color = team_colors[team_id % team_colors.size()]
 
 signal food_delivered(team_id: int, amount: int)
 signal food_inventory_changed(team_id: int)
@@ -150,7 +151,10 @@ func update_fuel(delta: float) -> void:
 func update_fuel_bar() -> void:
 	if is_instance_valid(fuel_bar):
 		fuel_bar.size.x = 366.0 * (current_fuel / max_fuel)
-		fuel_bar.color   = Color(0, 1, 1)
+
+func set_fuel_bar_color(color: Color) -> void:
+	if is_instance_valid(fuel_bar):
+		fuel_bar.color = color
 
 func add_food_from_source(amount: float, source_team: int) -> void:
 	if amount <= 0.0:

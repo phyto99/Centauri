@@ -6,6 +6,7 @@ var team_color = "" # New variable to store the current team's color
 
 func _ready():
 	add_to_group("camera_manager")
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	# Find all players in the scene
 	call_deferred("initialize_cameras")
 
@@ -34,6 +35,7 @@ func initialize_cameras():
 	for player in players:
 		if player.has_node("Camera2D"):
 			player.get_node("Camera2D").enabled = false
+			player.get_node("Camera2D").process_mode = Node.PROCESS_MODE_ALWAYS
 	
 	# Enable the first camera and set initial team color
 	if players.size() > 0:
@@ -65,19 +67,30 @@ func set_active_camera(index):
 	# Enable the selected camera
 	players[index].get_node("Camera2D").enabled = true
 	current_camera_index = index
-	
-	# Set the team color based on the player's team
-	if players[index].has_method("get_team_color"):
-		team_color = players[index].get_team_color()
-	elif players[index].has_meta("team_color"):
-		team_color = players[index].get_meta("team_color")
-	elif players[index].get("team_color") != null:
-		team_color = players[index].team_color
-	else:
-		var colors = ["cyan", "magenta", "lime", "gold"]
-		team_color = colors[index % colors.size()]
-	
-	print("Switched to player " + str(index + 1) + "'s view, Team color: " + team_color)
+
+	# Resolve actual team Color from the player's team_colors array
+	var active_player = players[index]
+	var tid: int = active_player.get("team_id") if active_player.get("team_id") != null else index
+	var colors_arr = active_player.get("team_colors")
+	var resolved_color: Color = Color.CYAN
+	if colors_arr and colors_arr.size() > 0:
+		resolved_color = colors_arr[tid % colors_arr.size()]
+	team_color = resolved_color
+
+	# Update button icon colors and fuel bar to this team's color
+	var ui := get_tree().get_first_node_in_group("ui_controller")
+	if ui and ui.has_method("set_team_color"):
+		ui.set_team_color(resolved_color)
+
+	# Show only the active player's fuel bar
+	for p in players:
+		var fb = p.get("fuel_bar")
+		if is_instance_valid(fb):
+			fb.visible = (p == active_player)
+	if active_player.has_method("set_fuel_bar_color"):
+		active_player.set_fuel_bar_color(resolved_color)
+
+	print("Switched to player " + str(index + 1) + "'s view, Team color: " + str(resolved_color))
 	_refresh_planet_sprites()
 
 # Update every planet's outline sprite based on whether the active ship is landed on it.

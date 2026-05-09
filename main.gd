@@ -28,13 +28,37 @@ var _time_label:       Label    = null
 var _session_cl:       CanvasLayer = null
 
 func _ready() -> void:
+	# Set this node to ALWAYS so _process/_unhandled_input work while paused
+	# but explicitly mark gameplay children as PAUSABLE so they freeze
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_session_ui()
 	spawn_players()
+	# Mark all gameplay nodes as PAUSABLE so get_tree().paused actually freezes them
+	_set_gameplay_pausable()
+	get_tree().paused = true
+
+func _set_gameplay_pausable() -> void:
+	# Explicitly set ships and planets to PAUSABLE so they freeze
+	for ship in get_tree().get_nodes_in_group("players"):
+		if is_instance_valid(ship):
+			ship.process_mode = Node.PROCESS_MODE_PAUSABLE
+	for planet in get_tree().get_nodes_in_group("planets"):
+		if is_instance_valid(planet):
+			planet.process_mode = Node.PROCESS_MODE_PAUSABLE
+	# Also freeze the UI control node (buttons, etc.)
+	var ui := get_node_or_null("UI")
+	if ui:
+		ui.process_mode = Node.PROCESS_MODE_PAUSABLE
+		# Exempt the crops label so it still reads food_amount while paused
+		var crops := ui.get_node_or_null("CanvasLayer/playercrops")
+		if crops:
+			crops.process_mode = Node.PROCESS_MODE_ALWAYS
 
 # ── Session UI ────────────────────────────────────────────────────────────────
 func _build_session_ui() -> void:
 	_session_cl = CanvasLayer.new()
 	_session_cl.layer = 20
+	_session_cl.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(_session_cl)
 
 	# Find the existing timebar sprite from the scene and drive it from here
@@ -164,16 +188,76 @@ func _on_import_pressed() -> void:
 	_update_timebar()
 	if _start_btn:
 		_start_btn.text = "▶ Start"
+	# Re-freeze newly spawned planets
+	_set_gameplay_pausable()
+
+var _countdown_active: bool = false
 
 func _on_start_pressed() -> void:
+	if _countdown_active:
+		return
 	if not _running:
-		_running = true
+		# First press — run countdown then start
 		if _start_btn:
-			_start_btn.text = "⏸ Pause"
+			_start_btn.text = "..."
+			_start_btn.disabled = true
+		_run_countdown()
 	else:
 		_running = false
 		if _start_btn:
 			_start_btn.text = "▶ Resume"
+			_start_btn.disabled = false
+
+func _run_countdown() -> void:
+	_countdown_active = true
+	# Game is already paused from _ready — countdown runs as ALWAYS
+
+	var cl := CanvasLayer.new()
+	cl.layer = 50
+	cl.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(cl)
+
+	var lbl := Label.new()
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 180)
+	lbl.add_theme_color_override("font_color", Color.WHITE)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.anchor_left   = 0.75
+	lbl.anchor_right  = 0.75
+	lbl.anchor_top    = 0.5
+	lbl.anchor_bottom = 0.5
+	lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	lbl.grow_vertical   = Control.GROW_DIRECTION_BOTH
+	cl.add_child(lbl)
+
+	for n in range(10, -1, -1):
+		lbl.text = str(n)
+		lbl.modulate = Color(1, 1, 1, 0.0)
+
+		var steps := 20
+		var rise_px := 80.0
+		var step_time := 0.03
+
+		for step in range(steps):
+			var t: float = float(step) / float(steps - 1)
+			var ease_t: float = 1.0 - pow(1.0 - t, 2.0)
+			lbl.modulate.a = ease_t
+			lbl.offset_top    = rise_px * (1.0 - ease_t)
+			lbl.offset_bottom = lbl.offset_top
+			await get_tree().create_timer(step_time, true).timeout
+
+		await get_tree().create_timer(0.15, true).timeout
+		lbl.modulate.a = 0.0
+
+	cl.queue_free()
+	_countdown_active = false
+	# Unfreeze and start
+	get_tree().paused = false
+	_running = true
+	if _start_btn:
+		_start_btn.text = "⏸ Pause"
+		_start_btn.disabled = false
 
 # ── N-body physics ────────────────────────────────────────────────────────────
 func _is_anchor(planet: Node) -> bool:
@@ -287,6 +371,7 @@ func _process(delta: float) -> void:
 	_update_timebar()
 	if _session_time >= _session_duration:
 		_running = false
+		_show_game_over()
 
 	queue_redraw()
 
@@ -306,6 +391,104 @@ func _init_timebar_sprite() -> void:
 func _set_timebar_progress(value: float) -> void:
 	if _timebar_sprite and _timebar_sprite.material is ShaderMaterial:
 		_timebar_sprite.material.set_shader_parameter("progress", value)
+
+var _game_over: bool = false
+var _pan_last: Vector2 = Vector2.ZERO
+var _panning: bool = false
+
+func _show_game_over() -> void:
+	_game_over = true
+	get_tree().paused = true
+
+	var cl := CanvasLayer.new()
+	cl.layer = 60
+	cl.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(cl)
+
+	# Full-screen dismiss overlay
+	var overlay := ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0.55)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed:
+			cl.visible = false)
+	cl.add_child(overlay)
+
+	# Centered panel — fixed width, auto height
+	var panel := PanelContainer.new()
+	panel.anchor_left   = 0.5
+	panel.anchor_right  = 0.5
+	panel.anchor_top    = 0.5
+	panel.anchor_bottom = 0.5
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical   = Control.GROW_DIRECTION_BOTH
+	panel.custom_minimum_size = Vector2(700, 0)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.gui_input.connect(func(ev: InputEvent): get_viewport().set_input_as_handled())
+	cl.add_child(panel)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_left","margin_right","margin_top","margin_bottom"]:
+		margin.add_theme_constant_override(side, 28)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 24)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(vbox)
+
+	# GAME OVER title — above scoreboard
+	var title := Label.new()
+	title.text = "GAME OVER"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 64)
+	title.add_theme_color_override("font_color", Color.WHITE)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(title)
+
+	vbox.add_child(HSeparator.new())
+
+	# Embed the live scoreboard node directly (reparent temporarily)
+	var scoreboard := get_node_or_null("UI/CanvasLayer/Scoreboard")
+	if scoreboard and is_instance_valid(scoreboard):
+		# Wrap in a Control so the Node2D scoreboard sits inside the vbox
+		var wrapper := Control.new()
+		wrapper.custom_minimum_size = Vector2(640, 120)
+		wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vbox.add_child(wrapper)
+		var sb_copy := scoreboard.duplicate(DUPLICATE_USE_INSTANTIATION)
+		sb_copy.position = Vector2.ZERO
+		sb_copy.scale = Vector2(1.5, 1.5)
+		wrapper.custom_minimum_size = Vector2(640, 120 * 1.5)
+		wrapper.add_child(sb_copy)
+
+	# Wire scoreboard HUD button to re-show overlay
+	var sb_node := get_node_or_null("UI/CanvasLayer/Scoreboard")
+	if sb_node and not sb_node.has_node("_GameOverBtn"):
+		var sb_btn := Button.new()
+		sb_btn.name = "_GameOverBtn"
+		sb_btn.flat = true
+		sb_btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		sb_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		sb_btn.pressed.connect(func(): cl.visible = true)
+		sb_node.add_child(sb_btn)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _game_over:
+		return
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_panning = event.pressed
+	elif event is InputEventMouseMotion and _panning:
+		for ship in get_tree().get_nodes_in_group("players"):
+			if not is_instance_valid(ship):
+				continue
+			var cam := ship.get_node_or_null("Camera2D")
+			if cam and cam.enabled:
+				# Move camera opposite to drag direction, scaled by zoom
+				cam.global_position -= event.relative / cam.zoom.x
+				break
 
 func _update_timebar() -> void:
 	var progress: float = 1.0 - (_session_time / _session_duration) if _session_duration > 0 else 1.0
