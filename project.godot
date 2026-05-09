@@ -15,13 +15,15 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Centauri"
-run/main_scene="res://menu.tscn"
+run/main_scene="res://main.tscn"
 run/disable_stdout=true
 config/features=PackedStringArray("4.3", "GL Compatibility")
 
 [autoload]
 
 PlanetBuilder="*res://PlanetBuilder.gd"
+GameConfig="*res://GameConfig.gd"
+ColyseusSync="*res://ColyseusSync.gd"
 
 [input]
 

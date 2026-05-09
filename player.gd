@@ -44,6 +44,7 @@ var team_colors := [
 
 func _ready() -> void:
 	thrust_sprite.visible = false
+	_apply_game_config()
 	current_fuel  = max_fuel
 	gravity_scale = 0.0
 	collision_layer = 1
@@ -54,7 +55,20 @@ func _ready() -> void:
 	_setup_land_detector()
 	if not is_instance_valid(fuel_bar):
 		_create_fuel_bar()
-	fuel_bar.color = team_colors[team_id % team_colors.size()]
+	fuel_bar.color = GameConfig.color_for(team_id)
+	GameConfig.settings_changed.connect(_on_settings_changed)
+
+func _apply_game_config() -> void:
+	engine_power        = GameConfig.thrust_power
+	fuel_depletion_rate = GameConfig.thrust_depletion
+	base_fuel_regen_rate = GameConfig.fuel_recovery
+	food_to_fuel_ratio  = GameConfig.fuel_efficiency
+
+func _on_settings_changed() -> void:
+	_apply_game_config()
+	set_team_color(team_id)
+	if is_instance_valid(fuel_bar):
+		fuel_bar.color = GameConfig.color_for(team_id)
 
 signal food_delivered(team_id: int, amount: int)
 signal food_inventory_changed(team_id: int)
@@ -111,7 +125,7 @@ func set_team_color(id: int) -> void:
 	if mat:
 		mat = mat.duplicate()
 		ship_sprite.material = mat
-		mat.set_shader_parameter("team_color", team_colors[id % team_colors.size()])
+		mat.set_shader_parameter("team_color", GameConfig.color_for(id))
 
 func change_state(new_state: int) -> void:
 	if state == new_state:

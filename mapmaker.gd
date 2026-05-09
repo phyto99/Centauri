@@ -272,6 +272,9 @@ func _export_json() -> void:
 	var json_str: String = JSON.stringify({"planets": planets_data}, "\t")
 	DisplayServer.clipboard_set(json_str)
 	print("Map copied to clipboard (%d planets)" % planets_data.size())
+	if OS.get_name() == "Web":
+		var js_safe := json_str.replace("\\", "\\\\").replace("`", "\\`")
+		JavaScriptBridge.eval("window.parent.postMessage({type:'mapExport',json:`" + js_safe + "`},'*')")
 
 func _reset_positions() -> void:
 	# Lightweight reset — restores positions/velocities without destroying planets
