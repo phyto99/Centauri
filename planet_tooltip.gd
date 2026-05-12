@@ -45,6 +45,7 @@ var _pending_unhover: Node = null
 var _last_unhovered: Node = null
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	custom_minimum_size = Vector2(WIDTH, HEADER_H + MID_H + BOTTOM_H_PER_TEAM)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hide()
@@ -372,6 +373,17 @@ func _make_panel(color: Color, pos: Vector2, sz: Vector2) -> Panel:
 	p.add_theme_stylebox_override("panel", style)
 	return p
 
+func _update_header_gradient(planet: Node) -> void:
+	var col := _planet_base_color(planet)
+	_header_mat.set_shader_parameter("color_left",  col.lightened(0.25))
+	_header_mat.set_shader_parameter("color_right", col.darkened(0.25))
+
+func _planet_base_color(planet: Node) -> Color:
+	var sprite: Variant = planet.get("outline_sprite")
+	if sprite != null and sprite.material is ShaderMaterial:
+		return sprite.material.get_shader_parameter("planet_color")
+	return Color(0.20, 0.72, 0.72)  # bluegreen native fallback
+
 func _make_gradient_material(left: Color, right: Color) -> ShaderMaterial:
 	var shader = Shader.new()
 	shader.code = """
@@ -422,6 +434,7 @@ func _on_planet_hovered(planet: Node) -> void:
 			_planet.tax_updated.disconnect(_on_tax_updated)
 
 	_planet = planet
+	_update_header_gradient(planet)
 
 	_name_label.text = "Planet " + planet.planet_name if planet.get("planet_name") else "Planet"
 	_resize_to_name()

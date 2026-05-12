@@ -64,7 +64,7 @@ const PLANET_COLORS: Array = [
 	["Bluegreen",  Color(1.00, 1.00, 1.00),  1.0,  1.0],   # 2 — no shader
 	["Grey",       Color(0.72, 0.72, 0.72),  6.5,  1.0],   # 3 — mid grey, extreme contrast
 	["Gold",       Color(1.00, 0.95, 0.75),  1.2,  1.8],   # 4
-	["Pink",       Color(1.00, 0.45, 0.45),  1.3,  1.8],   # 5 — warm red-orange
+	["Pink",       Color(1.00, 0.47, 0.42),  1.3,  1.8],   # 5 — original pink, trace orange
 	["Red",        Color(0.50, 0.10, 0.15),  2.0,  1.8],   # 6 — slightly cooler, duller
 ]
 
@@ -495,13 +495,6 @@ func _draw():
 			for k in grid.keys():
 				draw_circle(grid[k]["cell"].position, cell_radius, Color.BLACK)
 
-		# Draw coordinates if needed
-		var font_size = 16.0 * current_scale
-		for key in grid.keys():
-			var data = grid[key]
-			var text_pos = data["cell"].position
-			var font = ThemeDB.fallback_font
-			draw_string(font, text_pos, key, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, Color(1,1,1))
 
 func is_adjacent(cell1: Dictionary, cell2: Dictionary) -> bool:
 	# Defensive checks
@@ -716,8 +709,10 @@ var team_tax_earned: Dictionary = {}
 var team_tax_earned_per_source: Dictionary = {}  # dominant_tid → {source_tid → float}
 
 func _on_animation_timer_timeout():
+	var main_node: Node = get_tree().get_first_node_in_group("main")
+	var game_running: bool = main_node != null and bool(main_node.get("_running"))
 	var current_time = Time.get_ticks_msec() / 1000.0
-	
+
 	for cell_data in grid.values():
 		if cell_data.has("stamp") and cell_data["stamp"] and cell_data.has("state"):
 			var stamp = cell_data["stamp"]
@@ -734,21 +729,21 @@ func _on_animation_timer_timeout():
 					
 					# Check if animation completed a cycle
 					if cell_data.has("last_progress") and cell_data["last_progress"] > progress:
-						# Animation completed a cycle, increment yield
-						yield_count += 1
-						emit_signal("yield_updated", yield_count)
-						var cell_team = cell_data.get("team_id", team_id)
-						team_yield_counts[cell_team] = team_yield_counts.get(cell_team, 0) + 1
-						emit_signal("team_yield_updated", cell_team, team_yield_counts[cell_team])
-						if dominant_team_id >= 0 and cell_team != dominant_team_id:
-							var tax := tax_rate / 10.0
-							team_tax_paid[cell_team] = team_tax_paid.get(cell_team, 0.0) + tax
-							team_tax_earned[dominant_team_id] = team_tax_earned.get(dominant_team_id, 0.0) + tax
-							if not team_tax_earned_per_source.has(dominant_team_id):
-								team_tax_earned_per_source[dominant_team_id] = {}
-							var tes: Dictionary = team_tax_earned_per_source[dominant_team_id]
-							tes[cell_team] = tes.get(cell_team, 0.0) + tax
-							emit_signal("tax_updated")
+						if game_running:
+							yield_count += 1
+							emit_signal("yield_updated", yield_count)
+							var cell_team = cell_data.get("team_id", team_id)
+							team_yield_counts[cell_team] = team_yield_counts.get(cell_team, 0) + 1
+							emit_signal("team_yield_updated", cell_team, team_yield_counts[cell_team])
+							if dominant_team_id >= 0 and cell_team != dominant_team_id:
+								var tax := tax_rate / 10.0
+								team_tax_paid[cell_team] = team_tax_paid.get(cell_team, 0.0) + tax
+								team_tax_earned[dominant_team_id] = team_tax_earned.get(dominant_team_id, 0.0) + tax
+								if not team_tax_earned_per_source.has(dominant_team_id):
+									team_tax_earned_per_source[dominant_team_id] = {}
+								var tes: Dictionary = team_tax_earned_per_source[dominant_team_id]
+								tes[cell_team] = tes.get(cell_team, 0.0) + tax
+								emit_signal("tax_updated")
 					
 					# Store current progress for next frame comparison
 					cell_data["last_progress"] = progress

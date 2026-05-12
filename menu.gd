@@ -1,6 +1,11 @@
 extends Control
 
 func _ready():
+	# In web+room mode skip the menu — go straight to the game scene
+	if OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty():
+		get_tree().change_scene_to_file("res://main.tscn")
+		return
+
 	$VBoxContainer/StartButton.pressed.connect(_on_start_button_pressed)
 	$VBoxContainer/MapMakerButton.pressed.connect(_on_mapmaker_button_pressed)
 	$VBoxContainer/QuitButton.pressed.connect(_on_quit_button_pressed)

@@ -1,8 +1,9 @@
 extends Label
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	var ls := LabelSettings.new()
-	ls.font_size = 17
+	ls.font_size = 16
 	ls.font_color = Color(0, 0, 0, 1)
 	var vf := SystemFont.new()
 	vf.font_names = PackedStringArray(["Segoe UI", "Helvetica Neue", "SF Pro Display", "Arial", "sans-serif"])
@@ -12,7 +13,7 @@ func _ready() -> void:
 	label_settings = ls
 
 func _process(_delta: float) -> void:
-	# Show moves for the planet the active (camera-enabled) player is landed on.
+	# If the active player is landed, show that planet's moves.
 	for ship in get_tree().get_nodes_in_group("players"):
 		if not is_instance_valid(ship):
 			continue
@@ -21,12 +22,12 @@ func _process(_delta: float) -> void:
 			continue
 		var planet = ship.get("landed_planet")
 		if planet != null and is_instance_valid(planet):
-			text = str(planet.moves_remaining)
+			text = "%d MOVES REMAINING" % planet.moves_remaining
 			return
-		return
+		break  # active player found but not landed — fall through to planet scan
 
-	# Fallback: first non-sun planet
+	# Show from first non-sun planet regardless of landing state.
 	for planet in get_tree().get_nodes_in_group("planets"):
-		if not planet.get("is_sun"):
-			text = str(planet.moves_remaining)
+		if is_instance_valid(planet) and not planet.get("is_sun"):
+			text = "%d MOVES REMAINING" % planet.moves_remaining
 			return

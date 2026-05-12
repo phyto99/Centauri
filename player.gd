@@ -7,6 +7,11 @@ enum { IDLE, MOVING }
 @export var spin_power: float = 40000.0
 @export var team_id: int = 0
 
+var is_local: bool = true
+var peer_id:  int  = 0
+
+var _trail: CPUParticles2D
+
 @export var max_fuel: float = 100.0
 @export var fuel_depletion_rate: float = 10.0
 @export var base_fuel_regen_rate: float = 2.0
@@ -43,6 +48,7 @@ var team_colors := [
 ]
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	thrust_sprite.visible = false
 	_apply_game_config()
 	current_fuel  = max_fuel
@@ -57,6 +63,47 @@ func _ready() -> void:
 		_create_fuel_bar()
 	fuel_bar.color = GameConfig.color_for(team_id)
 	GameConfig.settings_changed.connect(_on_settings_changed)
+	_setup_trail()
+
+static func _make_soft_circle() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var c   := sz * 0.5
+	for y in range(sz):
+		for x in range(sz):
+			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(c, c)) / c
+			var a := clampf((1.0 - d) * 0.75, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+	return ImageTexture.create_from_image(img)
+
+func _setup_trail() -> void:
+	_trail = CPUParticles2D.new()
+	_trail.texture               = _make_soft_circle()
+	_trail.z_index               = -1
+	_trail.emitting              = false
+	_trail.amount                = 60
+	_trail.lifetime              = 0.45
+	_trail.explosiveness         = 0.0
+	_trail.randomness            = 0.0
+	_trail.emission_shape        = CPUParticles2D.EMISSION_SHAPE_POINT
+	_trail.direction             = Vector2(-1.0, 0.0)
+	_trail.spread                = 0.0
+	_trail.initial_velocity_min  = 22.0
+	_trail.initial_velocity_max  = 22.0
+	_trail.gravity               = Vector2.ZERO
+	_trail.scale_amount_min      = 2.0
+	_trail.scale_amount_max      = 2.0
+	_trail.color                 = GameConfig.color_for(team_id)
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1.0, 1.0, 1.0, 1.0))
+	grad.set_color(1, Color(1.0, 1.0, 1.0, 0.0))
+	_trail.color_ramp            = grad
+	add_child(_trail)
+
+func _update_trail_color() -> void:
+	if not is_instance_valid(_trail):
+		return
+	_trail.color = GameConfig.color_for(team_id)
 
 func _apply_game_config() -> void:
 	engine_power        = GameConfig.thrust_power
@@ -69,6 +116,7 @@ func _on_settings_changed() -> void:
 	set_team_color(team_id)
 	if is_instance_valid(fuel_bar):
 		fuel_bar.color = GameConfig.color_for(team_id)
+	_update_trail_color()
 
 signal food_delivered(team_id: int, amount: int)
 signal food_inventory_changed(team_id: int)
@@ -90,6 +138,11 @@ func _on_planet_contact(body: Node) -> void:
 		return
 	if Input.is_action_pressed("thrust"):
 		return
+	# Refuel to max on sun contact
+	if body.get("is_sun"):
+		current_fuel = max_fuel
+		update_fuel_bar()
+
 	# Deliver food to sun on contact — zero inventory instantly
 	if body.get("is_sun") and food_amount > 0.0:
 		var delivered := roundi(food_amount)
@@ -185,11 +238,30 @@ func _notify_camera_manager() -> void:
 func collect_food(amount: float) -> void:
 	add_food_from_source(amount, team_id)
 
+func set_thrusting(v: bool) -> void:
+	change_state(MOVING if v else IDLE)
+
+func is_thrusting() -> bool:
+	return state == MOVING
+
+func set_team(id: int) -> void:
+	team_id = id
+	set_team_color(id)
+	if is_instance_valid(fuel_bar):
+		fuel_bar.color = GameConfig.color_for(id)
+
 func _process(delta: float) -> void:
-	get_input()
+	if is_local:
+		get_input()
 	update_fuel(delta)
 
 func _physics_process(_delta: float) -> void:
+	if is_instance_valid(_trail):
+		_trail.emitting = (state == MOVING and is_local)
+	if not is_local:
+		constant_force  = Vector2.ZERO
+		constant_torque = 0.0
+		return
 	if landed_planet != null and is_instance_valid(landed_planet):
 		var rot_delta: float = landed_planet.rotation - planet_rotation_at_landing
 		global_position = landed_planet.global_position + landing_offset.rotated(rot_delta)
@@ -197,7 +269,6 @@ func _physics_process(_delta: float) -> void:
 		constant_force   = Vector2.ZERO
 		constant_torque  = rotation_dir * spin_power
 		return
-
 	constant_force  = thrust
 	constant_torque = rotation_dir * spin_power
 

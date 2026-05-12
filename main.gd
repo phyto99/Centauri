@@ -28,28 +28,37 @@ var _time_label:       Label    = null
 var _session_cl:       CanvasLayer = null
 
 func _ready() -> void:
-	# Set this node to ALWAYS so _process/_unhandled_input work while paused
-	# but explicitly mark gameplay children as PAUSABLE so they freeze
+	add_to_group("main")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_session_ui()
-	spawn_players()
-	# Mark all gameplay nodes as PAUSABLE so get_tree().paused actually freezes them
 	_set_gameplay_pausable()
-	get_tree().paused = true
+	GameConfig.game_started.connect(_on_game_started)
+	# Single-player / native dev: auto-spawn ships if not in a Colyseus room
+	if OS.get_name() != "Web" or ColyseusSync.room_id.is_empty():
+		spawn_players()
+
+func _on_game_started(cfg: Dictionary) -> void:
+	PlayerSpawner._main_node = self
+	# Apply session duration if admin sent one
+	if cfg.has("sessionDuration"):
+		_session_duration = maxf(10.0, float(cfg["sessionDuration"]))
+		_update_timebar()
+	# Load map if config includes one
+	if not GameConfig.map_json.is_empty():
+		await _load_map_from_dict(GameConfig.map_json)
+	# Start game (countdown → unpause → running)
+	if not _countdown_active and not _running:
+		_on_start_pressed()
 
 func _set_gameplay_pausable() -> void:
-	# Explicitly set ships and planets to PAUSABLE so they freeze
+	# Ships freeze while paused; planets stay ALWAYS so hover/tooltip works while frozen.
+	# Planets are physics-frozen via freeze=true and n-body guard, not process_mode.
 	for ship in get_tree().get_nodes_in_group("players"):
 		if is_instance_valid(ship):
 			ship.process_mode = Node.PROCESS_MODE_PAUSABLE
-	for planet in get_tree().get_nodes_in_group("planets"):
-		if is_instance_valid(planet):
-			planet.process_mode = Node.PROCESS_MODE_PAUSABLE
-	# Also freeze the UI control node (buttons, etc.)
 	var ui := get_node_or_null("UI")
 	if ui:
 		ui.process_mode = Node.PROCESS_MODE_PAUSABLE
-		# Exempt the crops label so it still reads food_amount while paused
 		var crops := ui.get_node_or_null("CanvasLayer/playercrops")
 		if crops:
 			crops.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -76,8 +85,6 @@ func _build_session_ui() -> void:
 	panel.offset_top    = 30.0   # below timebar
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_session_cl.add_child(panel)
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_session_cl.add_child(panel)
 
 	var margin := MarginContainer.new()
 	for side in ["margin_left","margin_right","margin_top","margin_bottom"]:
@@ -88,54 +95,64 @@ func _build_session_ui() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
-	# Import Map
-	var import_btn := Button.new()
-	import_btn.text = "Import Map"
-	import_btn.pressed.connect(_on_import_pressed)
-	vbox.add_child(import_btn)
+	var multiplayer_mode := OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty()
 
-	vbox.add_child(HSeparator.new())
+	if not multiplayer_mode:
+		# Import Map (local/dev only)
+		var import_btn := Button.new()
+		import_btn.text = "Import Map"
+		import_btn.pressed.connect(_on_import_pressed)
+		vbox.add_child(import_btn)
 
-	# Session duration
-	var dur_row := HBoxContainer.new()
-	dur_row.add_theme_constant_override("separation", 4)
-	vbox.add_child(dur_row)
-	var dur_lbl := Label.new()
-	dur_lbl.text = "Duration"
-	dur_lbl.add_theme_font_size_override("font_size", 12)
-	dur_row.add_child(dur_lbl)
-	var dur_input := LineEdit.new()
-	dur_input.text = "120"
-	dur_input.custom_minimum_size = Vector2(52, 0)
-	dur_input.placeholder_text = "s"
-	dur_row.add_child(dur_input)
-	var dur_s := Label.new()
-	dur_s.text = "s"
-	dur_s.add_theme_font_size_override("font_size", 12)
-	dur_row.add_child(dur_s)
-	dur_input.text_submitted.connect(func(t: String):
-		if t.is_valid_float():
-			_session_duration = maxf(10.0, float(t))
-			_update_timebar())
-	dur_input.focus_exited.connect(func():
-		if dur_input.text.is_valid_float():
-			_session_duration = maxf(10.0, float(dur_input.text))
-			_update_timebar())
+		vbox.add_child(HSeparator.new())
 
-	# Time label
+		# Session duration (local/dev only)
+		var dur_row := HBoxContainer.new()
+		dur_row.add_theme_constant_override("separation", 4)
+		vbox.add_child(dur_row)
+		var dur_lbl := Label.new()
+		dur_lbl.text = "Duration"
+		dur_lbl.add_theme_font_size_override("font_size", 12)
+		dur_row.add_child(dur_lbl)
+		var dur_input := LineEdit.new()
+		dur_input.text = "120"
+		dur_input.custom_minimum_size = Vector2(52, 0)
+		dur_input.placeholder_text = "s"
+		dur_row.add_child(dur_input)
+		var dur_s := Label.new()
+		dur_s.text = "s"
+		dur_s.add_theme_font_size_override("font_size", 12)
+		dur_row.add_child(dur_s)
+		dur_input.text_submitted.connect(func(t: String):
+			if t.is_valid_float():
+				_session_duration = maxf(10.0, float(t))
+				_update_timebar())
+		dur_input.focus_exited.connect(func():
+			if dur_input.text.is_valid_float():
+				_session_duration = maxf(10.0, float(dur_input.text))
+				_update_timebar())
+
+	# Time label (always shown)
 	_time_label = Label.new()
 	_time_label.text = "0.0 / 120 s"
 	_time_label.add_theme_font_size_override("font_size", 12)
 	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_time_label)
 
-	vbox.add_child(HSeparator.new())
-
-	# Start button
-	_start_btn = Button.new()
-	_start_btn.text = "▶ Start"
-	_start_btn.pressed.connect(_on_start_pressed)
-	vbox.add_child(_start_btn)
+	if not multiplayer_mode:
+		vbox.add_child(HSeparator.new())
+		# Start button (local/dev only — admin panel controls start in multiplayer)
+		_start_btn = Button.new()
+		_start_btn.text = "▶ Start"
+		_start_btn.pressed.connect(_on_start_pressed)
+		vbox.add_child(_start_btn)
+	else:
+		vbox.add_child(HSeparator.new())
+		var wait_lbl := Label.new()
+		wait_lbl.text = "Waiting for host..."
+		wait_lbl.add_theme_font_size_override("font_size", 11)
+		wait_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(wait_lbl)
 
 # ── Import from clipboard ─────────────────────────────────────────────────────
 func _on_import_pressed() -> void:
@@ -151,7 +168,9 @@ func _on_import_pressed() -> void:
 	if not raw is Dictionary:
 		push_warning("JSON root is not a Dictionary")
 		return
-	var data: Dictionary = raw as Dictionary
+	await _load_map_from_dict(raw as Dictionary)
+
+func _load_map_from_dict(data: Dictionary) -> void:
 	var planets_data: Array = data.get("planets", []) as Array
 
 	# Clear existing non-sun planets
@@ -184,12 +203,10 @@ func _on_import_pressed() -> void:
 		_velocities[planet.get_instance_id()] = vel
 
 	_session_time = 0.0
-	_running = false   # wait for Start button
+	_running = false
 	_update_timebar()
 	if _start_btn:
 		_start_btn.text = "▶ Start"
-	# Re-freeze newly spawned planets
-	_set_gameplay_pausable()
 
 var _countdown_active: bool = false
 
@@ -330,18 +347,11 @@ func _check_collisions(bodies: Array) -> void:
 			_velocities.erase(node.get_instance_id())
 			node.queue_free()
 
-# ── Process ───────────────────────────────────────────────────────────────────
-func _process(delta: float) -> void:
+# ── Physics process — planet positions updated here so ships read fresh pos same tick ──
+func _physics_process(delta: float) -> void:
 	if not _running:
 		return
 
-	# Update explosions
-	for exp in _explosions:
-		exp.radius += exp.max_radius * 2.2 * delta
-		exp.alpha = max(0.0, 1.0 - (exp.radius / exp.max_radius))
-	_explosions = _explosions.filter(func(e): return e.alpha > 0.0 and e.radius < e.max_radius)
-
-	# N-body sim
 	_sim_accumulator += delta
 	while _sim_accumulator >= SIM_STEP:
 		_sim_accumulator -= SIM_STEP
@@ -366,6 +376,17 @@ func _process(delta: float) -> void:
 			b.node.position = b.pos
 			_velocities[b.id] = b.vel
 		_check_collisions(bodies)
+
+# ── Process — UI/timebar/explosions only ──────────────────────────────────────
+func _process(delta: float) -> void:
+	if not _running:
+		return
+
+	# Update explosions
+	for exp in _explosions:
+		exp.radius += exp.max_radius * 2.2 * delta
+		exp.alpha = max(0.0, 1.0 - (exp.radius / exp.max_radius))
+	_explosions = _explosions.filter(func(e): return e.alpha > 0.0 and e.radius < e.max_radius)
 
 	_session_time = min(_session_time + delta, _session_duration)
 	_update_timebar()
@@ -398,6 +419,9 @@ var _panning: bool = false
 
 func _show_game_over() -> void:
 	_game_over = true
+	var ui := get_node_or_null("UI")
+	if ui and ui.has_method("set_game_over"):
+		ui.set_game_over()
 	get_tree().paused = true
 
 	var cl := CanvasLayer.new()
