@@ -36,6 +36,8 @@ var diversity_teams: Array = []       # foreign team_ids whose crops we've deliv
 var landed_planet: Node = null
 var landing_offset: Vector2 = Vector2.ZERO
 var planet_rotation_at_landing: float = 0.0
+var _pulsing:     bool = false
+var _pulse_time:  float = 0.0
 
 var team_colors := [
 	Color(0, 1, 1),
@@ -48,7 +50,7 @@ var team_colors := [
 ]
 
 func _ready() -> void:
-	process_mode = Node.PROCESS_MODE_PAUSABLE
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	thrust_sprite.visible = false
 	_apply_game_config()
 	current_fuel  = max_fuel
@@ -62,8 +64,18 @@ func _ready() -> void:
 	if not is_instance_valid(fuel_bar):
 		_create_fuel_bar()
 	fuel_bar.color = GameConfig.color_for(team_id)
+	fuel_bar.visible = is_local
 	GameConfig.settings_changed.connect(_on_settings_changed)
 	_setup_trail()
+	# UI color update for local player
+	if is_local:
+		_update_ui_color()
+	# In multiplayer, keep camera off until game starts (free cam handles pre-game)
+	var _multiplayer := OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty()
+	camera.enabled = is_local and not _multiplayer
+	if is_local and _multiplayer:
+		_pulsing = true
+		GameConfig.game_started.connect(_on_game_started_player)
 
 static func _make_soft_circle() -> ImageTexture:
 	var sz := 64
@@ -81,8 +93,8 @@ func _setup_trail() -> void:
 	_trail.texture               = _make_soft_circle()
 	_trail.z_index               = -1
 	_trail.emitting              = false
-	_trail.amount                = 60
-	_trail.lifetime              = 0.45
+	_trail.amount                = 120
+	_trail.lifetime              = 0.675
 	_trail.explosiveness         = 0.0
 	_trail.randomness            = 0.0
 	_trail.emission_shape        = CPUParticles2D.EMISSION_SHAPE_POINT
@@ -91,8 +103,8 @@ func _setup_trail() -> void:
 	_trail.initial_velocity_min  = 22.0
 	_trail.initial_velocity_max  = 22.0
 	_trail.gravity               = Vector2.ZERO
-	_trail.scale_amount_min      = 2.0
-	_trail.scale_amount_max      = 2.0
+	_trail.scale_amount_min      = 1.6
+	_trail.scale_amount_max      = 1.6
 	_trail.color                 = GameConfig.color_for(team_id)
 	var grad := Gradient.new()
 	grad.set_color(0, Color(1.0, 1.0, 1.0, 1.0))
@@ -134,27 +146,27 @@ func _setup_land_detector() -> void:
 func _on_planet_contact(body: Node) -> void:
 	if not body.is_in_group("planets"):
 		return
+	if not GameConfig.game_running:
+		return
 	if landed_planet != null:
 		return
 	if Input.is_action_pressed("thrust"):
 		return
-	# Refuel to max on sun contact
-	if body.get("is_sun"):
+	# Refuel and deliver food when touching the sun
+	if body.is_in_group("sun_planet"):
 		current_fuel = max_fuel
 		update_fuel_bar()
-
-	# Deliver food to sun on contact — zero inventory instantly
-	if body.get("is_sun") and food_amount > 0.0:
-		var delivered := roundi(food_amount)
-		for source in food_by_source:
-			if source != team_id and food_by_source[source] > 0.0:
-				if not diversity_teams.has(source):
-					diversity_teams.append(source)
-		food_by_source.clear()
-		food_amount = 0.0
-		total_food_delivered += delivered
-		emit_signal("food_delivered", team_id, delivered)
-		emit_signal("food_inventory_changed", team_id)
+		if food_amount > 0.0:
+			var delivered := roundi(food_amount)
+			for source in food_by_source:
+				if source != team_id and food_by_source[source] > 0.0:
+					if not diversity_teams.has(source):
+						diversity_teams.append(source)
+			food_by_source.clear()
+			food_amount = 0.0
+			total_food_delivered += delivered
+			emit_signal("food_delivered", team_id, delivered)
+			emit_signal("food_inventory_changed", team_id)
 	landed_planet = body
 	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
@@ -186,15 +198,19 @@ func change_state(new_state: int) -> void:
 	state = new_state
 	thrust_sprite.visible = (state == MOVING)
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			camera.zoom *= 1.0 + zoom_speed
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			camera.zoom *= 1.0 - zoom_speed
+func _on_game_started_player(_cfg: Dictionary) -> void:
+	_pulsing = false
+	ship_sprite.modulate.a = 1.0
+	if is_instance_valid(_trail):
+		_trail.modulate.a = 1.0
+	camera.enabled = true
 
 func get_input() -> void:
 	thrust = Vector2.ZERO
+	rotation_dir = 0.0
+	if not GameConfig.game_running:
+		change_state(IDLE)
+		return
 	rotation_dir = Input.get_axis("rotate_left", "rotate_right")
 
 	if Input.is_action_pressed("thrust") and has_fuel():
@@ -235,6 +251,10 @@ func _notify_camera_manager() -> void:
 	if cm and cm.has_method("_refresh_planet_sprites"):
 		cm._refresh_planet_sprites()
 
+func launch() -> void:
+	landed_planet = null
+	_notify_camera_manager()
+
 func collect_food(amount: float) -> void:
 	add_food_from_source(amount, team_id)
 
@@ -244,24 +264,41 @@ func set_thrusting(v: bool) -> void:
 func is_thrusting() -> bool:
 	return state == MOVING
 
+func _update_ui_color() -> void:
+	var ui := get_tree().get_first_node_in_group("ui_controller")
+	if ui and ui.has_method("set_team_color"):
+		ui.set_team_color(GameConfig.color_for(team_id))
+
 func set_team(id: int) -> void:
 	team_id = id
 	set_team_color(id)
 	if is_instance_valid(fuel_bar):
 		fuel_bar.color = GameConfig.color_for(id)
+	if is_local:
+		_update_ui_color()
 
 func _process(delta: float) -> void:
 	if is_local:
 		get_input()
+	if _pulsing:
+		_pulse_time += delta
+		var a := 0.4 + 0.6 * (0.5 + 0.5 * sin(_pulse_time * TAU * 0.7))
+		ship_sprite.modulate.a = a
+		if is_instance_valid(_trail):
+			_trail.modulate.a = a
 	update_fuel(delta)
 
 func _physics_process(_delta: float) -> void:
 	if is_instance_valid(_trail):
-		_trail.emitting = (state == MOVING and is_local)
+		_trail.emitting = (state == MOVING)
 	if not is_local:
 		constant_force  = Vector2.ZERO
 		constant_torque = 0.0
 		return
+	# Auto-release from any planet while game isn't running (pre-game / countdown)
+	if not GameConfig.game_running and landed_planet != null:
+		landed_planet = null
+		_notify_camera_manager()
 	if landed_planet != null and is_instance_valid(landed_planet):
 		var rot_delta: float = landed_planet.rotation - planet_rotation_at_landing
 		global_position = landed_planet.global_position + landing_offset.rotated(rot_delta)

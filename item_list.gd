@@ -129,6 +129,7 @@ func _connect_deferred(node: Node) -> void:
 		_rebuild_team_rows()
 	elif node.is_in_group("players"):
 		_connect_ship(node)
+		_rebuild_team_rows()
 
 # ── Signal connections ────────────────────────────────────────────────────────
 
@@ -147,6 +148,11 @@ func _connect_ship(ship: Node) -> void:
 	if ship.has_signal("food_inventory_changed") and \
 			not ship.food_inventory_changed.is_connected(_on_inventory_changed):
 		ship.food_inventory_changed.connect(_on_inventory_changed)
+	if not ship.tree_exiting.is_connected(_on_ship_exiting):
+		ship.tree_exiting.connect(_on_ship_exiting)
+
+func _on_ship_exiting() -> void:
+	call_deferred("_rebuild_team_rows")
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
 

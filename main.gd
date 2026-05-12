@@ -31,37 +31,64 @@ func _ready() -> void:
 	add_to_group("main")
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_session_ui()
-	_set_gameplay_pausable()
 	GameConfig.game_started.connect(_on_game_started)
-	# Single-player / native dev: auto-spawn ships if not in a Colyseus room
+	GameConfig.settings_changed.connect(_on_settings_changed_main)
+	_build_free_cam()
 	if OS.get_name() != "Web" or ColyseusSync.room_id.is_empty():
 		spawn_players()
+	else:
+		# Multiplayer: start in free-cam pan mode until game begins
+		_pre_game = true
+		_free_cam.enabled = true
+		call_deferred("_center_free_cam")
+		# Re-center on local ship once PlayerSpawner redistributes it
+		ColyseusSync.host_assigned.connect(func(_id, _h): call_deferred("_center_free_cam"))
+
+func _build_free_cam() -> void:
+	_free_cam = Camera2D.new()
+	_free_cam.name = "FreeCam"
+	_free_cam.process_mode = Node.PROCESS_MODE_ALWAYS
+	_free_cam.enabled = false
+	_free_cam.zoom = Vector2(0.6, 0.6)
+	add_child(_free_cam)
+
+func _center_free_cam() -> void:
+	for ship in get_tree().get_nodes_in_group("players"):
+		if is_instance_valid(ship) and ship.get("is_local"):
+			_free_cam.global_position = ship.global_position
+			return
+	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
+	_free_cam.global_position = sun.global_position if (sun and is_instance_valid(sun)) else Vector2.ZERO
+
+var _last_loaded_map_key: int = 0  # hash of last successfully queued map load
+
+func _on_settings_changed_main() -> void:
+	if _running or _countdown_active or GameConfig.map_json.is_empty():
+		return
+	var key := GameConfig.map_json.hash()
+	if key == _last_loaded_map_key:
+		return
+	_last_loaded_map_key = key
+	_load_map_from_dict(GameConfig.map_json)
 
 func _on_game_started(cfg: Dictionary) -> void:
 	PlayerSpawner._main_node = self
+	# End pre-game pan — player.gd's _on_game_started_player re-enables ship camera
+	_pre_game = false
+	if is_instance_valid(_free_cam):
+		_free_cam.enabled = false
 	# Apply session duration if admin sent one
 	if cfg.has("sessionDuration"):
 		_session_duration = maxf(10.0, float(cfg["sessionDuration"]))
 		_update_timebar()
-	# Load map if config includes one
-	if not GameConfig.map_json.is_empty():
-		await _load_map_from_dict(GameConfig.map_json)
-	# Start game (countdown → unpause → running)
+	# Compute how many seconds remain until server's intended start time
+	var start_at_ms: float = float(cfg.get("startAt", 0))
+	var delay_sec: int = 10
+	if start_at_ms > 0:
+		var now_ms: float = Time.get_unix_time_from_system() * 1000.0
+		delay_sec = max(1, int(ceil((start_at_ms - now_ms) / 1000.0)))
 	if not _countdown_active and not _running:
-		_on_start_pressed()
-
-func _set_gameplay_pausable() -> void:
-	# Ships freeze while paused; planets stay ALWAYS so hover/tooltip works while frozen.
-	# Planets are physics-frozen via freeze=true and n-body guard, not process_mode.
-	for ship in get_tree().get_nodes_in_group("players"):
-		if is_instance_valid(ship):
-			ship.process_mode = Node.PROCESS_MODE_PAUSABLE
-	var ui := get_node_or_null("UI")
-	if ui:
-		ui.process_mode = Node.PROCESS_MODE_PAUSABLE
-		var crops := ui.get_node_or_null("CanvasLayer/playercrops")
-		if crops:
-			crops.process_mode = Node.PROCESS_MODE_ALWAYS
+		_on_start_pressed(delay_sec)
 
 # ── Session UI ────────────────────────────────────────────────────────────────
 func _build_session_ui() -> void:
@@ -144,7 +171,7 @@ func _build_session_ui() -> void:
 		# Start button (local/dev only — admin panel controls start in multiplayer)
 		_start_btn = Button.new()
 		_start_btn.text = "▶ Start"
-		_start_btn.pressed.connect(_on_start_pressed)
+		_start_btn.pressed.connect(func(): _on_start_pressed())
 		vbox.add_child(_start_btn)
 	else:
 		vbox.add_child(HSeparator.new())
@@ -204,30 +231,30 @@ func _load_map_from_dict(data: Dictionary) -> void:
 
 	_session_time = 0.0
 	_running = false
+	GameConfig.game_running = false
 	_update_timebar()
 	if _start_btn:
 		_start_btn.text = "▶ Start"
 
 var _countdown_active: bool = false
 
-func _on_start_pressed() -> void:
+func _on_start_pressed(countdown_seconds: int = 10) -> void:
 	if _countdown_active:
 		return
 	if not _running:
-		# First press — run countdown then start
 		if _start_btn:
 			_start_btn.text = "..."
 			_start_btn.disabled = true
-		_run_countdown()
+		_run_countdown(countdown_seconds)
 	else:
 		_running = false
+		GameConfig.game_running = false
 		if _start_btn:
 			_start_btn.text = "▶ Resume"
 			_start_btn.disabled = false
 
-func _run_countdown() -> void:
+func _run_countdown(seconds: int = 10) -> void:
 	_countdown_active = true
-	# Game is already paused from _ready — countdown runs as ALWAYS
 
 	var cl := CanvasLayer.new()
 	cl.layer = 50
@@ -248,7 +275,7 @@ func _run_countdown() -> void:
 	lbl.grow_vertical   = Control.GROW_DIRECTION_BOTH
 	cl.add_child(lbl)
 
-	for n in range(10, -1, -1):
+	for n in range(seconds, -1, -1):
 		lbl.text = str(n)
 		lbl.modulate = Color(1, 1, 1, 0.0)
 
@@ -269,9 +296,11 @@ func _run_countdown() -> void:
 
 	cl.queue_free()
 	_countdown_active = false
-	# Unfreeze and start
-	get_tree().paused = false
 	_running = true
+	GameConfig.game_running = true
+	for ship in get_tree().get_nodes_in_group("players"):
+		if is_instance_valid(ship):
+			ship.call("launch")
 	if _start_btn:
 		_start_btn.text = "⏸ Pause"
 		_start_btn.disabled = false
@@ -392,37 +421,49 @@ func _process(delta: float) -> void:
 	_update_timebar()
 	if _session_time >= _session_duration:
 		_running = false
+		GameConfig.game_running = false
 		_show_game_over()
 
 	queue_redraw()
 
+const _TB_TRIM_LEFT  := 2
+const _TB_TRIM_RIGHT := 1
+
 func _init_timebar_sprite() -> void:
-	# Find the Timebar sprite in the scene and stretch it to viewport width
 	var tb: Node = get_node_or_null("UI/CanvasLayer/Timebar")
 	if tb and tb is Sprite2D:
 		_timebar_sprite = tb as Sprite2D
-		# Scale to fill viewport width
-		var vp_w: float = get_viewport().get_visible_rect().size.x
-		var tex_w: float = _timebar_sprite.texture.get_width() if _timebar_sprite.texture else 240.0
-		_timebar_sprite.scale.x = vp_w / tex_w
-		_timebar_sprite.position.x = vp_w * 0.5
-		# Start at full (progress=1 means fully visible, we'll count down)
+		_fit_timebar()
+		get_viewport().size_changed.connect(_fit_timebar)
 		_set_timebar_progress(1.0)
+
+func _fit_timebar() -> void:
+	if not is_instance_valid(_timebar_sprite) or not _timebar_sprite.texture:
+		return
+	var tex_w := float(_timebar_sprite.texture.get_width())
+	var tex_h := float(_timebar_sprite.texture.get_height())
+	var content_w := tex_w - _TB_TRIM_LEFT - _TB_TRIM_RIGHT
+	_timebar_sprite.region_enabled = true
+	_timebar_sprite.region_rect = Rect2(_TB_TRIM_LEFT, 0.0, content_w, tex_h)
+	var vp_w := get_viewport().get_visible_rect().size.x
+	_timebar_sprite.scale.x = vp_w / content_w
+	_timebar_sprite.position.x = vp_w * 0.5
 
 func _set_timebar_progress(value: float) -> void:
 	if _timebar_sprite and _timebar_sprite.material is ShaderMaterial:
 		_timebar_sprite.material.set_shader_parameter("progress", value)
 
 var _game_over: bool = false
+var _pre_game:  bool = false
 var _pan_last: Vector2 = Vector2.ZERO
 var _panning: bool = false
+var _free_cam: Camera2D = null
 
 func _show_game_over() -> void:
 	_game_over = true
 	var ui := get_node_or_null("UI")
 	if ui and ui.has_method("set_game_over"):
 		ui.set_game_over()
-	get_tree().paused = true
 
 	var cl := CanvasLayer.new()
 	cl.layer = 60
@@ -498,21 +539,46 @@ func _show_game_over() -> void:
 		sb_btn.pressed.connect(func(): cl.visible = true)
 		sb_node.add_child(sb_btn)
 
+func _get_active_cam() -> Camera2D:
+	if is_instance_valid(_free_cam) and _free_cam.enabled:
+		return _free_cam
+	for ship in get_tree().get_nodes_in_group("players"):
+		if not is_instance_valid(ship):
+			continue
+		var cam := ship.get_node_or_null("Camera2D")
+		if cam and cam.enabled:
+			return cam
+	return null
+
 func _unhandled_input(event: InputEvent) -> void:
+	# Zoom works in all states
+	if event is InputEventMouseButton and event.pressed:
+		var cam := _get_active_cam()
+		if cam:
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				cam.zoom *= 1.1
+				get_viewport().set_input_as_handled()
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				cam.zoom *= 0.9
+				get_viewport().set_input_as_handled()
+
+	# Panning: pre-game uses free cam; game-over uses ship cam
+	if _pre_game:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			_panning = event.pressed
+		elif event is InputEventMouseMotion and _panning and is_instance_valid(_free_cam):
+			_free_cam.global_position -= event.relative / _free_cam.zoom.x
+		return
+
 	if not _game_over:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_panning = event.pressed
 	elif event is InputEventMouseMotion and _panning:
-		for ship in get_tree().get_nodes_in_group("players"):
-			if not is_instance_valid(ship):
-				continue
-			var cam := ship.get_node_or_null("Camera2D")
-			if cam and cam.enabled:
-				# Move camera opposite to drag direction, scaled by zoom
-				cam.global_position -= event.relative / cam.zoom.x
-				break
+		var cam := _get_active_cam()
+		if cam:
+			cam.global_position -= event.relative / cam.zoom.x
 
 func _update_timebar() -> void:
 	var progress: float = 1.0 - (_session_time / _session_duration) if _session_duration > 0 else 1.0
@@ -524,15 +590,10 @@ func _update_timebar() -> void:
 func _draw() -> void:
 	if _explosions.is_empty():
 		return
-	# Get current camera zoom for screen-space thickness
 	var inv_z: float = 1.0
-	for ship in get_tree().get_nodes_in_group("players"):
-		if not is_instance_valid(ship):
-			continue
-		var cam := ship.get_node_or_null("Camera2D")
-		if cam and cam.enabled:
-			inv_z = 1.0 / cam.zoom.x
-			break
+	var cam := _get_active_cam()
+	if cam:
+		inv_z = 1.0 / cam.zoom.x
 	for exp in _explosions:
 		var thickness: float = (2.0 + 18.0 * (1.0 - exp.alpha)) * inv_z
 		draw_arc(exp.pos, exp.radius, 0.0, TAU, 64,

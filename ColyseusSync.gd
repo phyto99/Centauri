@@ -58,7 +58,7 @@ func _colyseus_js() -> String:
 				});
 				room.onMessage('game_start', function(data) {
 					if (window._godotStartCallback)
-						window._godotStartCallback(JSON.stringify(data.config || data));
+						window._godotStartCallback(JSON.stringify(data));
 				});
 				room.onMessage('host_assigned', function(data) {
 					console.log('ColyseusSync: host_assigned', data);
@@ -94,7 +94,8 @@ func _on_start(args: Array) -> void:
 	var json_str: String = str(args[0]) if args.size() > 0 else ""
 	var result: Variant = JSON.parse_string(json_str)
 	if result is Dictionary:
-		GameConfig.apply_settings(result)
+		var cfg: Dictionary = result.get("config", result) as Dictionary
+		GameConfig.apply_settings(cfg)
 		GameConfig.game_started.emit(result)
 
 func _on_message(args: Array) -> void:

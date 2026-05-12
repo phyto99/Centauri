@@ -1,5 +1,6 @@
 extends Node
 
+var game_running:      bool  = false
 var thrust_power:      float = 1000.0
 var thrust_depletion:  float = 10.0
 var fuel_efficiency:   float = 0.5
