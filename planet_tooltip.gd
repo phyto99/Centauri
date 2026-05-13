@@ -374,7 +374,17 @@ func _make_panel(color: Color, pos: Vector2, sz: Vector2) -> Panel:
 	return p
 
 func _update_header_gradient(planet: Node) -> void:
+	var sprite: Variant = planet.get("outline_sprite")
+	if sprite == null or not (sprite.material is ShaderMaterial):
+		_header_mat.set_shader_parameter("color_left",  Color("#00f780"))
+		_header_mat.set_shader_parameter("color_right", Color("#00a997"))
+		return
 	var col := _planet_base_color(planet)
+	var h := col.h
+	var is_red   := h > 0.92 or h < 0.05
+	var is_green := h > 0.28 and h < 0.45
+	if is_red or is_green:
+		col = Color.from_hsv(h, minf(col.s * 1.3, 1.0), minf(col.v * 1.3, 1.0))
 	_header_mat.set_shader_parameter("color_left",  col.lightened(0.25))
 	_header_mat.set_shader_parameter("color_right", col.darkened(0.25))
 
@@ -382,7 +392,7 @@ func _planet_base_color(planet: Node) -> Color:
 	var sprite: Variant = planet.get("outline_sprite")
 	if sprite != null and sprite.material is ShaderMaterial:
 		return sprite.material.get_shader_parameter("planet_color")
-	return Color(0.20, 0.72, 0.72)  # bluegreen native fallback
+	return Color(0.12, 0.60, 0.72)  # bluegreen native fallback
 
 func _make_gradient_material(left: Color, right: Color) -> ShaderMaterial:
 	var shader = Shader.new()

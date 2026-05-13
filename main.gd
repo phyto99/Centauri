@@ -495,7 +495,7 @@ func _show_game_over() -> void:
 
 	var margin := MarginContainer.new()
 	for side in ["margin_left","margin_right","margin_top","margin_bottom"]:
-		margin.add_theme_constant_override(side, 28)
+		margin.add_theme_constant_override(side, 18)
 	panel.add_child(margin)
 
 	var vbox := VBoxContainer.new()
@@ -515,7 +515,7 @@ func _show_game_over() -> void:
 	vbox.add_child(HSeparator.new())
 
 	var _gap := Control.new()
-	_gap.custom_minimum_size.y = 20.0
+	_gap.custom_minimum_size.y = 12.0
 	_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_gap)
 
@@ -523,7 +523,7 @@ func _show_game_over() -> void:
 	var scoreboard := get_node_or_null("UI/CanvasLayer/Scoreboard")
 	if scoreboard and is_instance_valid(scoreboard):
 		var sb_scale      := 1.5
-		var il_local_h    := 400.0
+		var il_local_h    := 267.0
 		var panel_content := 900.0 - 56.0
 		# effective visual width: ItemList(641) * its scale(0.8) * Node2D(1.2) * sb_scale(1.5)
 		var sb_visual_w   := 641.0 * 0.8 * 1.2 * sb_scale

@@ -101,23 +101,33 @@ func _setup_trail() -> void:
 	_trail.texture               = _make_soft_circle()
 	_trail.z_index               = -1
 	_trail.emitting              = false
-	_trail.amount                = 120
-	_trail.lifetime              = 0.675
+	_trail.amount                = 300
+	_trail.lifetime              = 2.0
 	_trail.explosiveness         = 0.0
 	_trail.randomness            = 0.0
+	_trail.local_coords          = false
 	_trail.emission_shape        = CPUParticles2D.EMISSION_SHAPE_POINT
-	_trail.direction             = Vector2(-1.0, 0.0)
+	_trail.direction             = Vector2.ZERO
 	_trail.spread                = 0.0
-	_trail.initial_velocity_min  = 22.0
-	_trail.initial_velocity_max  = 22.0
+	_trail.initial_velocity_min  = 0.0
+	_trail.initial_velocity_max  = 0.0
 	_trail.gravity               = Vector2.ZERO
-	_trail.scale_amount_min      = 1.6
-	_trail.scale_amount_max      = 1.6
+	_trail.scale_amount_min      = 1.5
+	_trail.scale_amount_max      = 1.5
 	_trail.color                 = GameConfig.color_for(team_id)
+	# Fade in for first 20% of lifetime (25 frames), fade out for remaining 80% (100 frames)
 	var grad := Gradient.new()
-	grad.set_color(0, Color(1.0, 1.0, 1.0, 1.0))
-	grad.set_color(1, Color(1.0, 1.0, 1.0, 0.0))
+	grad.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_LINEAR
+	grad.set_color(0, Color(1.0, 1.0, 1.0, 0.5))
+	grad.add_point(0.2, Color(1.0, 1.0, 1.0, 1.0))
+	grad.set_color(grad.get_point_count() - 1, Color(1.0, 1.0, 1.0, 0.0))
 	_trail.color_ramp            = grad
+	# Scale mirrors alpha: grows slightly during fade-in, shrinks to 0 during fade-out
+	var scale_curve := Curve.new()
+	scale_curve.add_point(Vector2(0.0,  1.0),  0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	scale_curve.add_point(Vector2(0.2,  1.167), 0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	scale_curve.add_point(Vector2(1.0,  0.0),  0.0, 0.0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	_trail.scale_amount_curve    = scale_curve
 	add_child(_trail)
 
 func _update_trail_color() -> void:
