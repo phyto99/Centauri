@@ -109,12 +109,16 @@ func _get_efficiency(tid: int) -> int:
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 func _ready() -> void:
+	focus_mode = Control.FOCUS_NONE
 	get_tree().node_added.connect(_on_node_added)
 	for planet in get_tree().get_nodes_in_group("planets"):
 		_connect_planet(planet)
 	for ship in get_tree().get_nodes_in_group("players"):
 		_connect_ship(ship)
 	_rebuild_team_rows()
+	for i in range(_HEADER_ITEMS):
+		set_item_selectable(i, false)
+		set_item_tooltip_enabled(i, false)
 
 func _on_node_added(node: Node) -> void:
 	_connect_deferred.call_deferred(node)
@@ -240,5 +244,6 @@ func _rebuild_team_rows() -> void:
 			add_item(text)
 			var idx := item_count - 1
 			set_item_selectable(idx, false)
+			set_item_tooltip_enabled(idx, false)
 			set_item_custom_bg_color(idx, bg)
 			set_item_custom_fg_color(idx, Color(1, 1, 1, 1))

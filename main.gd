@@ -1,7 +1,12 @@
 extends Node2D
 
 @export var player_scene: PackedScene
-@export var player_count: int = 5
+@export var player_count: int = 6
+
+# ── Multiplayer test configuration ────────────────────────────────────────────
+var _mp_test_teams: int = 3   # number of teams
+var _mp_test_ppt:   int = 2   # players per team (base; round-robin handles extras)
+var _mp_test_total_lbl: Label = null
 
 # ── N-body constants (must match mapmaker.gd) ─────────────────────────────────
 const G         := 80.0 * 2.0 * 100.0
@@ -173,6 +178,9 @@ func _build_session_ui() -> void:
 		_start_btn.text = "▶ Start"
 		_start_btn.pressed.connect(func(): _on_start_pressed())
 		vbox.add_child(_start_btn)
+
+		vbox.add_child(HSeparator.new())
+		_build_mp_test_panel(vbox)
 	else:
 		vbox.add_child(HSeparator.new())
 		var wait_lbl := Label.new()
@@ -180,6 +188,83 @@ func _build_session_ui() -> void:
 		wait_lbl.add_theme_font_size_override("font_size", 11)
 		wait_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		vbox.add_child(wait_lbl)
+
+# ── Multiplayer test panel ────────────────────────────────────────────────────
+func _build_mp_test_panel(vbox: VBoxContainer) -> void:
+	var header := Label.new()
+	header.text = "Multiplayer Test"
+	header.add_theme_font_size_override("font_size", 11)
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(header)
+
+	# Teams slider row
+	var teams_row := HBoxContainer.new()
+	teams_row.add_theme_constant_override("separation", 4)
+	vbox.add_child(teams_row)
+	var teams_lbl := Label.new()
+	teams_lbl.text = "Teams"
+	teams_lbl.add_theme_font_size_override("font_size", 11)
+	teams_lbl.custom_minimum_size = Vector2(52, 0)
+	teams_row.add_child(teams_lbl)
+	var teams_slider := HSlider.new()
+	teams_slider.min_value = 1
+	teams_slider.max_value = 8
+	teams_slider.step = 1
+	teams_slider.value = _mp_test_teams
+	teams_slider.custom_minimum_size = Vector2(80, 0)
+	teams_row.add_child(teams_slider)
+	var teams_val := Label.new()
+	teams_val.text = str(_mp_test_teams)
+	teams_val.add_theme_font_size_override("font_size", 11)
+	teams_val.custom_minimum_size = Vector2(16, 0)
+	teams_row.add_child(teams_val)
+	teams_slider.value_changed.connect(func(v: float):
+		_mp_test_teams = int(v)
+		teams_val.text = str(_mp_test_teams)
+		_update_mp_test_total_label())
+
+	# Players per team slider row
+	var ppt_row := HBoxContainer.new()
+	ppt_row.add_theme_constant_override("separation", 4)
+	vbox.add_child(ppt_row)
+	var ppt_lbl := Label.new()
+	ppt_lbl.text = "Per team"
+	ppt_lbl.add_theme_font_size_override("font_size", 11)
+	ppt_lbl.custom_minimum_size = Vector2(52, 0)
+	ppt_row.add_child(ppt_lbl)
+	var ppt_slider := HSlider.new()
+	ppt_slider.min_value = 1
+	ppt_slider.max_value = 6
+	ppt_slider.step = 1
+	ppt_slider.value = _mp_test_ppt
+	ppt_slider.custom_minimum_size = Vector2(80, 0)
+	ppt_row.add_child(ppt_slider)
+	var ppt_val := Label.new()
+	ppt_val.text = str(_mp_test_ppt)
+	ppt_val.add_theme_font_size_override("font_size", 11)
+	ppt_val.custom_minimum_size = Vector2(16, 0)
+	ppt_row.add_child(ppt_val)
+	ppt_slider.value_changed.connect(func(v: float):
+		_mp_test_ppt = int(v)
+		ppt_val.text = str(_mp_test_ppt)
+		_update_mp_test_total_label())
+
+	# Total players indicator
+	_mp_test_total_lbl = Label.new()
+	_mp_test_total_lbl.add_theme_font_size_override("font_size", 11)
+	_mp_test_total_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_update_mp_test_total_label()
+	vbox.add_child(_mp_test_total_lbl)
+
+	# Respawn button
+	var respawn_btn := Button.new()
+	respawn_btn.text = "Respawn"
+	respawn_btn.pressed.connect(_respawn_mp_test)
+	vbox.add_child(respawn_btn)
+
+func _update_mp_test_total_label() -> void:
+	if _mp_test_total_lbl:
+		_mp_test_total_lbl.text = "%d players" % (_mp_test_teams * _mp_test_ppt)
 
 # ── Import from clipboard ─────────────────────────────────────────────────────
 func _on_import_pressed() -> void:
@@ -575,6 +660,12 @@ func _get_active_cam() -> Camera2D:
 	return null
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Any click that reaches here wasn't consumed by UI — release focus
+	if event is InputEventMouseButton and event.pressed:
+		var focused := get_viewport().gui_get_focus_owner()
+		if focused:
+			focused.release_focus()
+
 	# Zoom works in all states
 	if event is InputEventMouseButton and event.pressed:
 		var cam := _get_active_cam()
@@ -624,6 +715,18 @@ func _draw() -> void:
 				Color(1.0, 1.0, 1.0, exp.alpha * 0.9), thickness)
 
 # ── Spawn helpers ─────────────────────────────────────────────────────────────
+
+# Returns a slot-ordered list of team IDs so that teammates are maximally spread.
+# With equal-sized teams this is exactly round-robin (slot i → team i % num_teams).
+# For uneven totals, larger teams get extras distributed evenly via round-robin as well.
+func _interleaved_team_ids(num_teams: int, total: int) -> Array:
+	var ids: Array = []
+	ids.resize(total)
+	# Fill with round-robin: slot i gets team (i % num_teams)
+	for i in total:
+		ids[i] = i % num_teams
+	return ids
+
 func spawn_players() -> void:
 	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
 	if not sun or not player_scene:
@@ -639,22 +742,28 @@ func spawn_players() -> void:
 		back_dist = -(min_x + cpoly.position.x)
 	probe.free()
 
-	var existing := get_tree().get_nodes_in_group("players")
-	var total    := existing.size() + player_count
+	player_count = _mp_test_teams * _mp_test_ppt
+	var total    := player_count
 	var spawn_r: float = sun.surface_radius + back_dist
-
-	for i in range(existing.size()):
-		var angle := i * TAU / total - PI / 2.0
-		existing[i].global_position = sun.global_position + Vector2.from_angle(angle) * spawn_r
-		existing[i].rotation = angle
+	var team_ids := _interleaved_team_ids(_mp_test_teams, total)
 
 	for i in range(player_count):
-		var angle := (existing.size() + i) * TAU / total - PI / 2.0
+		var angle := i * TAU / total - PI / 2.0
 		var p := player_scene.instantiate()
-		p.team_id = i
+		p.team_id = team_ids[i]
 		add_child(p)
 		p.global_position = sun.global_position + Vector2.from_angle(angle) * spawn_r
 		p.rotation = angle
+
+func _respawn_mp_test() -> void:
+	if _running or _countdown_active:
+		return
+	for p in get_tree().get_nodes_in_group("players"):
+		if is_instance_valid(p):
+			p.queue_free()
+	await get_tree().process_frame
+	spawn_players()
+	_update_mp_test_total_label()
 
 func spawn_random_planets() -> void:
 	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()

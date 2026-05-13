@@ -30,5 +30,5 @@ item_3/icon = ExtResource("3_oyw4p")
 item_4/text = "       diversity"
 item_5/text = "      dominion"
 item_6/text = "      efficiency"
-item_7/text = "       Total"
+item_7/text = "       Total   "
 script = ExtResource("4_swhjb")

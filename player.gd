@@ -232,6 +232,9 @@ func _on_game_started_player(_cfg: Dictionary) -> void:
 	if is_instance_valid(_trail):
 		_trail.modulate.a = 1.0
 	camera.enabled = true
+	if is_instance_valid(_name_input):
+		_name_input.release_focus()
+		_name_input.focus_mode = Control.FOCUS_NONE
 
 func get_input() -> void:
 	thrust = Vector2.ZERO
@@ -369,8 +372,9 @@ func _create_fuel_bar() -> void:
 
 	_name_input                  = LineEdit.new()
 	_name_input.text_direction   = Control.TEXT_DIRECTION_LTR
+	_name_input.language         = "en"
 	_name_input.text             = ColyseusSync.local_name
-	_name_input.placeholder_text = "proxima123"
+	_name_input.placeholder_text = ""
 	_name_input.max_length       = 14
 	_name_input.size             = Vector2(160.0, 30.0)
 	_name_input.add_theme_font_override("font", _condensed_font)
@@ -385,7 +389,10 @@ func _create_fuel_bar() -> void:
 	_name_input.add_theme_stylebox_override("hover",     _sbox)
 	_name_input.add_theme_stylebox_override("read_only", _sbox)
 	_name_input.text_changed.connect(_on_name_input_changed)
+	_name_input.focus_entered.connect(func():
+		_name_input.caret_column = _name_input.text.length())
 	_hud_cl.add_child(_name_input)
+	_name_input.caret_column = ColyseusSync.local_name.length()
 
 	_cultivate_icon              = TextureRect.new()
 	_cultivate_icon.texture      = load("res://UI/cultivatesmall.svg")

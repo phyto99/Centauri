@@ -110,6 +110,7 @@ theme_override_font_sizes/font_size = 27
 script = ExtResource("15_hwgsd")
 
 [node name="movesleft" type="Sprite2D" parent="UI/CanvasLayer"]
+visible = false
 position = Vector2(1058, 638)
 scale = Vector2(0.8, 0.8)
 texture = ExtResource("12_00f6v")

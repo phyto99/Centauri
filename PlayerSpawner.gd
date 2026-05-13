@@ -9,6 +9,7 @@ var _ships: Dictionary = {}      # peer_id → player node
 var _local_peer_id: int = 0
 var _main_node: Node = null
 var _ship_back_dist: float = 50.0  # distance from ship center to its back edge
+var _redistribute_queued: bool = false  # deduplicate deferred calls
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -39,7 +40,7 @@ func _on_game_started(_cfg: Dictionary) -> void:
 func _on_host_assigned(peer_id: int, _is_host: bool) -> void:
 	_local_peer_id = peer_id
 	_spawn_local(peer_id)
-	_redistribute_ships()
+	_queue_redistribute()
 
 func _on_player_joined(peer_id: int, team_id: int, player_name: String) -> void:
 	if peer_id == _local_peer_id:
@@ -49,13 +50,13 @@ func _on_player_joined(peer_id: int, team_id: int, player_name: String) -> void:
 	if _ships.has(peer_id):
 		return
 	_spawn_remote(peer_id, team_id, player_name)
-	_redistribute_ships()
+	_queue_redistribute()
 
 func _on_player_left(peer_id: int) -> void:
 	if _ships.has(peer_id):
 		_ships[peer_id].queue_free()
 		_ships.erase(peer_id)
-	_redistribute_ships()
+	_queue_redistribute()
 
 func _on_player_team_changed(peer_id: int, team_id: int) -> void:
 	if _ships.has(peer_id):
@@ -73,6 +74,10 @@ func _on_relay_peer_disconnected(peer_id: int) -> void:
 	_on_player_left(peer_id)
 
 func _on_position_received(peer_id: int, pos: Vector2, rot: float, thrusting: bool) -> void:
+	# Ignore position packets before the game starts — slot positions from
+	# _redistribute_ships() are authoritative until GameConfig.game_running.
+	if not GameConfig.game_running:
+		return
 	if _ships.has(peer_id) and peer_id != _local_peer_id:
 		var ship: Node = _ships[peer_id]
 		ship.global_position = pos
@@ -111,7 +116,16 @@ func _add_ship(peer_id: int, ship: Node) -> void:
 	var parent := _main_node if _main_node != null else get_tree().current_scene
 	parent.add_child(ship)
 
+# Defers redistribution to end-of-frame so rapid bursts of player_joined signals
+# (e.g. full room state on join) all collapse into one layout pass.
+func _queue_redistribute() -> void:
+	if _redistribute_queued:
+		return
+	_redistribute_queued = true
+	call_deferred("_redistribute_ships")
+
 func _redistribute_ships() -> void:
+	_redistribute_queued = false
 	if GameConfig.game_running:
 		return
 	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
@@ -123,11 +137,40 @@ func _redistribute_ships() -> void:
 		var sr: float = float(sr_raw) if sr_raw != null else float(sun.get("current_size") if sun.get("current_size") else 80)
 		spawn_r = sr + _ship_back_dist
 
-	var keys: Array = _ships.keys()
-	keys.sort()
-	var total: int = max(keys.size(), 1)
-	for i in range(keys.size()):
-		var pid: int = keys[i]
+	# Group ships by team, sorted by peer_id within each team for determinism
+	var team_groups: Dictionary = {}  # team_id → [peer_id, ...]
+	for pid in _ships.keys():
+		var ship: Node = _ships[pid]
+		if not is_instance_valid(ship):
+			continue
+		var tid: int = int(ship.get("team_id"))
+		if not team_groups.has(tid):
+			team_groups[tid] = []
+		team_groups[tid].append(pid)
+
+	var team_ids: Array = team_groups.keys()
+	team_ids.sort()
+	for tid in team_ids:
+		team_groups[tid].sort()
+
+	# Round-robin across teams so teammates are maximally spread around the circle.
+	# Slot i → position (i * TAU / total - PI/2).  Same algorithm as singleplayer.
+	var queues: Array = []
+	for tid in team_ids:
+		queues.append(team_groups[tid].duplicate())
+
+	var slot_order: Array = []
+	var any_left := true
+	while any_left:
+		any_left = false
+		for q in queues:
+			if not q.is_empty():
+				slot_order.append(q.pop_front())
+				any_left = true
+
+	var total: int = max(slot_order.size(), 1)
+	for i in range(slot_order.size()):
+		var pid: int = slot_order[i]
 		var ship: Node = _ships[pid]
 		if not is_instance_valid(ship):
 			continue
