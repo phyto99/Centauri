@@ -27,6 +27,7 @@ func _ready() -> void:
 	ColyseusSync.player_joined.connect(_on_player_joined)
 	ColyseusSync.player_left.connect(_on_player_left)
 	ColyseusSync.player_team_changed.connect(_on_player_team_changed)
+	ColyseusSync.player_name_changed.connect(_on_player_name_changed)
 	NetManager.peer_connected.connect(_on_relay_peer_connected)
 	NetManager.peer_disconnected.connect(_on_relay_peer_disconnected)
 	NetManager.position_received.connect(_on_position_received)
@@ -61,6 +62,10 @@ func _on_player_team_changed(peer_id: int, team_id: int) -> void:
 		(_ships[peer_id] as Node).call("set_team", team_id)
 	Toast.display("Team changed")
 
+func _on_player_name_changed(peer_id: int, new_name: String) -> void:
+	if _ships.has(peer_id):
+		(_ships[peer_id] as Node).call("set_player_name", new_name)
+
 func _on_relay_peer_connected(peer_id: int) -> void:
 	pass
 
@@ -83,13 +88,15 @@ func _spawn_local(peer_id: int) -> void:
 	var ship: Node = _load_player()
 	ship.set("is_local", true)
 	ship.set("peer_id", peer_id)
+	ship.set("player_name", ColyseusSync.local_name)
 	ship.call("set_team", ColyseusSync.team_for_peer(peer_id))
 	_add_ship(peer_id, ship)
 
-func _spawn_remote(peer_id: int, team_id: int, _player_name: String) -> void:
+func _spawn_remote(peer_id: int, team_id: int, player_name: String) -> void:
 	var ship: Node = _load_player()
 	ship.set("is_local", false)
 	ship.set("peer_id", peer_id)
+	ship.set("player_name", player_name)
 	ship.call("set_team", team_id)
 	_add_ship(peer_id, ship)
 

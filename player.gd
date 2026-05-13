@@ -9,8 +9,14 @@ enum { IDLE, MOVING }
 
 var is_local: bool = true
 var peer_id:  int  = 0
+var player_name: String = ""
 
-var _trail: CPUParticles2D
+var _trail:           CPUParticles2D
+var _hud_cl:          CanvasLayer
+var _hud_bg:          ColorRect
+var _name_input:      LineEdit
+var _cultivate_icon:  TextureRect
+var _crops_hud_label: Label
 
 @export var max_fuel: float = 100.0
 @export var fuel_depletion_rate: float = 10.0
@@ -77,16 +83,18 @@ func _ready() -> void:
 		_pulsing = true
 		GameConfig.game_started.connect(_on_game_started_player)
 
-static func _make_soft_circle() -> ImageTexture:
-	var sz := 64
-	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
-	var c   := sz * 0.5
-	for y in range(sz):
-		for x in range(sz):
-			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(c, c)) / c
-			var a := clampf((1.0 - d) * 0.75, 0.0, 1.0)
-			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
-	return ImageTexture.create_from_image(img)
+static func _make_soft_circle() -> GradientTexture2D:
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1.0, 1.0, 1.0, 0.75))
+	grad.set_color(1, Color(1.0, 1.0, 1.0, 0.0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 64
+	tex.height = 64
+	return tex
 
 func _setup_trail() -> void:
 	_trail = CPUParticles2D.new()
@@ -126,9 +134,26 @@ func _apply_game_config() -> void:
 func _on_settings_changed() -> void:
 	_apply_game_config()
 	set_team_color(team_id)
+	var col := GameConfig.color_for(team_id)
 	if is_instance_valid(fuel_bar):
-		fuel_bar.color = GameConfig.color_for(team_id)
+		fuel_bar.color = col
 	_update_trail_color()
+	_update_hud_colors(col)
+
+func _update_hud_colors(col: Color) -> void:
+	if is_instance_valid(_name_input):
+		_name_input.add_theme_color_override("font_color",             col)
+		_name_input.add_theme_color_override("font_placeholder_color", col)
+		_name_input.add_theme_color_override("caret_color",            col)
+		var _sbox := StyleBoxEmpty.new()
+		_name_input.add_theme_stylebox_override("normal",    _sbox)
+		_name_input.add_theme_stylebox_override("focus",     _sbox)
+		_name_input.add_theme_stylebox_override("hover",     _sbox)
+		_name_input.add_theme_stylebox_override("read_only", _sbox)
+	if is_instance_valid(_cultivate_icon):
+		_cultivate_icon.modulate = col
+	if is_instance_valid(_crops_hud_label):
+		_crops_hud_label.add_theme_color_override("font_color", col)
 
 signal food_delivered(team_id: int, amount: int)
 signal food_inventory_changed(team_id: int)
@@ -234,6 +259,8 @@ func update_fuel(delta: float) -> void:
 func update_fuel_bar() -> void:
 	if is_instance_valid(fuel_bar):
 		fuel_bar.size.x = 366.0 * (current_fuel / max_fuel)
+	if is_instance_valid(_crops_hud_label):
+		_crops_hud_label.text = "x %d" % int(food_amount)
 
 func set_fuel_bar_color(color: Color) -> void:
 	if is_instance_valid(fuel_bar):
@@ -272,8 +299,10 @@ func _update_ui_color() -> void:
 func set_team(id: int) -> void:
 	team_id = id
 	set_team_color(id)
+	var col := GameConfig.color_for(id)
 	if is_instance_valid(fuel_bar):
-		fuel_bar.color = GameConfig.color_for(id)
+		fuel_bar.color = col
+	_update_hud_colors(col)
 	if is_local:
 		_update_ui_color()
 
@@ -314,14 +343,100 @@ func _on_body_entered(body: Node) -> void:
 		collect_food(body.get("food_value") if body.get("food_value") != null else 10.0)
 		body.queue_free()
 
+const _HUD_W   := 367.0
+const _BAR_H   := 14.0
+const _PANEL_H := _BAR_H * 4.0   # 56
+
 func _create_fuel_bar() -> void:
-	var cl  := CanvasLayer.new()
-	cl.name  = "CanvasLayer"
-	add_child(cl)
-	var bar := ColorRect.new()
+	_hud_cl       = CanvasLayer.new()
+	_hud_cl.name  = "CanvasLayer"
+	_hud_cl.layer = 5
+	add_child(_hud_cl)
+
+	var team_col := GameConfig.color_for(team_id)
+
+	_hud_bg         = ColorRect.new()
+	_hud_bg.color   = Color(0x191a19ff)
+	_hud_bg.size    = Vector2(_HUD_W, _PANEL_H)
+	_hud_cl.add_child(_hud_bg)
+
+	var row_h := _PANEL_H - _BAR_H   # 42
+
+	var _condensed_font := load("res://fonts/MSYH.TTC")
+
+	_name_input                  = LineEdit.new()
+	_name_input.text_direction   = Control.TEXT_DIRECTION_LTR
+	_name_input.text             = ColyseusSync.local_name
+	_name_input.placeholder_text = "proxima123"
+	_name_input.max_length       = 14
+	_name_input.size             = Vector2(160.0, 30.0)
+	_name_input.add_theme_font_override("font", _condensed_font)
+	_name_input.add_theme_font_size_override("font_size", 26)
+	_name_input.add_theme_color_override("font_color",             team_col)
+	_name_input.add_theme_color_override("font_placeholder_color", team_col)
+	_name_input.add_theme_color_override("caret_color",            team_col)
+	# Fully transparent, no border on any state
+	var _sbox := StyleBoxEmpty.new()
+	_name_input.add_theme_stylebox_override("normal",    _sbox)
+	_name_input.add_theme_stylebox_override("focus",     _sbox)
+	_name_input.add_theme_stylebox_override("hover",     _sbox)
+	_name_input.add_theme_stylebox_override("read_only", _sbox)
+	_name_input.text_changed.connect(_on_name_input_changed)
+	_hud_cl.add_child(_name_input)
+
+	_cultivate_icon              = TextureRect.new()
+	_cultivate_icon.texture      = load("res://UI/cultivatesmall.svg")
+	_cultivate_icon.modulate     = team_col
+	_cultivate_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_cultivate_icon.size         = Vector2(28.0, 30.0)
+	_hud_cl.add_child(_cultivate_icon)
+
+
+	_crops_hud_label             = Label.new()
+	_crops_hud_label.text        = "x 0"
+	_crops_hud_label.size        = Vector2(161.0, 30.0)
+	_crops_hud_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_crops_hud_label.add_theme_font_override("font", _condensed_font)
+	_crops_hud_label.add_theme_color_override("font_color", team_col)
+	_crops_hud_label.add_theme_font_size_override("font_size", 26)
+	_hud_cl.add_child(_crops_hud_label)
+
+	var bar      = ColorRect.new()
 	bar.name     = "FuelBar"
-	bar.color    = Color(0, 1, 1)
-	bar.size     = Vector2(366, 14)
-	bar.position = Vector2(0, get_viewport_rect().size.y - 14)
-	cl.add_child(bar)
+	bar.color    = team_col
+	bar.size     = Vector2(366.0, _BAR_H)
+	_hud_cl.add_child(bar)
 	fuel_bar = bar
+
+	_reposition_hud()
+	get_viewport().size_changed.connect(_reposition_hud)
+
+func _reposition_hud() -> void:
+	if not is_instance_valid(_hud_bg):
+		return
+	var vp_h  := get_viewport().get_visible_rect().size.y
+	var row_h := _PANEL_H - _BAR_H   # 42
+	var row_y := vp_h - _PANEL_H + (row_h - 30.0) * 0.5
+
+	_hud_bg.position          = Vector2(0.0, vp_h - _PANEL_H)
+	_name_input.position      = Vector2(6.0,   row_y)
+	_cultivate_icon.position  = Vector2(187.0, row_y)
+	_crops_hud_label.position = Vector2(219.0, row_y)
+	fuel_bar.position         = Vector2(0.0,   vp_h - _BAR_H)
+
+func _on_name_input_changed(new_text: String) -> void:
+	var clean := new_text.replace(" ", "")
+	if clean != new_text:
+		_name_input.text = clean
+		_name_input.caret_column = clean.length()
+	player_name = clean
+	ColyseusSync.change_local_name(clean)
+
+func set_player_name(pname: String) -> void:
+	player_name = pname
+	if is_instance_valid(_name_input):
+		_name_input.text = pname
+	queue_redraw()
+
+func _draw() -> void:
+	pass

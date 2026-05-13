@@ -5,20 +5,43 @@ signal host_assigned(peer_id: int, is_host: bool)
 signal player_joined(peer_id: int, team_id: int, player_name: String)
 signal player_left(peer_id: int)
 signal player_team_changed(peer_id: int, team_id: int)
+signal player_name_changed(peer_id: int, player_name: String)
 
 var room_id: String = ""
 var known_players: Dictionary = {}  # peer_id → {name, team_id}
+var local_name: String = ""
 
 var _settings_cb: JavaScriptObject
 var _start_cb:    JavaScriptObject
 var _message_cb:  JavaScriptObject
 
 func _ready() -> void:
+	local_name = _generate_proxima_name()
 	if OS.get_name() != "Web":
 		return
 	room_id = _room_id_from_url()
 	_register_callbacks()
 	_connect_to_room()
+
+static func _generate_proxima_name() -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	while true:
+		var pool := [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+		var d: Array[int] = []
+		for _i in range(3):
+			var idx := rng.randi_range(0, pool.size() - 1)
+			d.append(pool[idx])
+			pool.remove_at(idx)
+		if (d[0] == 6 and d[1] == 7) or (d[1] == 6 and d[2] == 7):
+			continue
+		return "proxima%d%d%d" % [d[0], d[1], d[2]]
+	return "proxima123"
+
+func change_local_name(new_name: String) -> void:
+	local_name = new_name
+	if OS.get_name() == "Web":
+		JavaScriptBridge.eval("if(window._centauriChangeName) window._centauriChangeName(%s);" % JSON.stringify(new_name))
 
 func _register_callbacks() -> void:
 	_settings_cb = JavaScriptBridge.create_callback(_on_settings)
@@ -32,9 +55,8 @@ func _connect_to_room() -> void:
 	if room_id.is_empty():
 		push_warning("ColyseusSync: no roomId in URL, running with defaults")
 		return
-	# Define connect function on window first (must exist before colyseus.js loads).
+	JavaScriptBridge.eval("window._centauriPlayerName = %s;" % JSON.stringify(local_name))
 	JavaScriptBridge.eval(_colyseus_js())
-	# Use fetch+eval instead of a <script> tag so COEP/CORP headers can't block it.
 	JavaScriptBridge.eval("""
 		fetch('/colyseus.js')
 			.then(function(r){ return r.text(); })
@@ -50,8 +72,9 @@ func _colyseus_js() -> String:
 		window._centauriConnect = function(roomId) {
 			var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 			var client = new Colyseus.Client(wsProto + '//' + window.location.host);
-			client.joinById(roomId).then(function(room) {
+			client.joinById(roomId, { name: window._centauriPlayerName || 'Player' }).then(function(room) {
 				console.log('ColyseusSync: joined room', roomId, 'as session', room.sessionId);
+				window._centauriChangeName = function(n) { room.send('change_name', { name: n }); };
 				room.onMessage('settings_update', function(data) {
 					if (window._godotSettingsCallback)
 						window._godotSettingsCallback(JSON.stringify(data.config || data));
@@ -77,6 +100,10 @@ func _colyseus_js() -> String:
 				room.onMessage('player_team_changed', function(data) {
 					if (window._godotMessageCallback)
 						window._godotMessageCallback(JSON.stringify({type:'player_team_changed', peerId:data.peerId, teamId:data.teamId}));
+				});
+				room.onMessage('player_name_changed', function(data) {
+					if (window._godotMessageCallback)
+						window._godotMessageCallback(JSON.stringify({type:'player_name_changed', peerId:data.peerId, name:data.name}));
 				});
 			}).catch(function(e) {
 				console.error('ColyseusSync: could not join room', roomId, e);
@@ -125,6 +152,12 @@ func _on_message(args: Array) -> void:
 			if known_players.has(pid):
 				known_players[pid]["team_id"] = tid
 			player_team_changed.emit(pid, tid)
+		"player_name_changed":
+			var pid: int = int(msg.get("peerId", 0))
+			var nm: String = str(msg.get("name", ""))
+			if known_players.has(pid):
+				known_players[pid]["name"] = nm
+			player_name_changed.emit(pid, nm)
 
 func team_for_peer(peer_id: int) -> int:
 	if known_players.has(peer_id):

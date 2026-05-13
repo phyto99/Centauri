@@ -1,6 +1,6 @@
 extends ItemList
 
-# ── Column mapping (matches header in scoreboard.tscn, 8 cols × 2 header rows = 16 items) ──
+# ── Column mapping (matches header in scoreboard.tscn, 8 cols × 1 header row = 8 items) ──
 # col 0 = cultivate icon  → yield grown (crops growing)
 # col 1 = collect icon    → crops in all same-team players' inventories (live)
 # col 2 = claim icon      → crops delivered to sun (accumulated)
@@ -10,7 +10,7 @@ extends ItemList
 # col 6 = "efficiency"    → efficiency % (delivered / grown * 100)
 # col 7 = "Total"         → 0 (not yet defined)
 
-const _HEADER_ITEMS = 16
+const _HEADER_ITEMS = 8
 const _MAX_COLUMNS  = 8
 
 # ── Per-team accumulators ─────────────────────────────────────────────────────
@@ -173,19 +173,35 @@ func _on_inventory_changed(_team_id: int) -> void:
 func _on_state_changed() -> void:
 	_rebuild_team_rows()
 
-# Column widths derived from header row 2 padding in scoreboard.tscn
-# Each width = length of the header item text (e.g. "0          " = 11 chars total)
-const _COL_WIDTHS = [11, 10, 13, 19, 23, 24, 19, 1]
+# Widths derived from header placeholder texts in scoreboard.tscn (max of both header rows).
+# Cols 0-2 are variable (large numbers truncated with ellipsis); cols 3-7 are bounded.
+const _COL_WIDTHS = [6, 6, 6, 7, 11, 11, 11, 7]
 
-# Centers a string within a given width by padding with spaces.
+const _FS := " "  # figure space — same width as a digit in any font
+
 func _center_text(text: String, width: int) -> String:
-	var text_len := text.length()
-	if text_len >= width:
+	if text.length() >= width:
 		return text
-	var total_pad := width - text_len
-	var left_pad := int(total_pad / 2.0)
-	var right_pad := total_pad - left_pad
-	return " ".repeat(left_pad) + text + " ".repeat(right_pad)
+	var total_pad := width - text.length()
+	var left_pad  := total_pad / 2
+	return _FS.repeat(left_pad) + text + _FS.repeat(total_pad - left_pad)
+
+func _format_millions(n: int) -> String:
+	if n >= 1_000_000:
+		var m := float(n) / 1_000_000.0
+		if m >= 100.0:
+			return "%dM" % int(m)       # 3 digits + M = 4 chars
+		elif m >= 10.0:
+			return "%.1fM" % m          # 2 digits + dot + 1 + M = 5 chars
+		else:
+			return "%.2fM" % m          # 1 digit + dot + 2 + M = 5 chars
+	return str(n)
+
+func _fit_col_text(text: String, col: int) -> String:
+	var width: int = _COL_WIDTHS[col]
+	if text.length() > width:
+		return text.substr(0, width - 1) + "…"
+	return _center_text(text, width)
 
 # ── Row builder ───────────────────────────────────────────────────────────────
 
@@ -198,28 +214,24 @@ func _rebuild_team_rows() -> void:
 		team_count = 1
 
 	for t in range(team_count):
+		var food_score := _get_food_score(t, team_count)
+		var diversity  := _get_team_diversity(t)
+		var dominion   := _get_dominion(t)
+		var efficiency := _get_efficiency(t)
+		var values := [
+			_format_millions(_team_yield.get(t, 0)),
+			_format_millions(_get_team_inventory(t)),
+			_format_millions(_team_delivered.get(t, 0)),
+			str(food_score),
+			str(diversity),
+			str(dominion),
+			str(efficiency),
+			str(food_score + diversity + dominion + efficiency),
+		]
 		var color: Color = _team_color(t)
 		var bg: Color    = Color(color.r, color.g, color.b, 0.25)
-
-		var food_score:  int = _get_food_score(t, team_count)
-		var diversity:   int = _get_team_diversity(t)
-		var dominion:    int = _get_dominion(t)
-		var efficiency:  int = _get_efficiency(t)
-		var total:       int = food_score + diversity + dominion + efficiency
-
-		var values: Array = [
-			str(_team_yield.get(t, 0)),   # col 0: crops growing (yield)
-			str(_get_team_inventory(t)),  # col 1: crops in inventory (live)
-			str(_team_delivered.get(t, 0)), # col 2: crops delivered to sun
-			str(food_score),              # col 3: relative food score (leader=100)
-			str(diversity),               # col 4: diversity
-			str(dominion),                # col 5: dominion (planets owned)
-			str(efficiency),              # col 6: efficiency %
-			str(total),                   # col 7: Total (sum of cols 3-6)
-		]
-
 		for col_idx in range(_MAX_COLUMNS):
-			var text: String = _center_text(values[col_idx], _COL_WIDTHS[col_idx])
+			var text := _fit_col_text(values[col_idx], col_idx)
 			add_item(text)
 			var idx := item_count - 1
 			set_item_selectable(idx, false)

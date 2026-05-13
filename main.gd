@@ -488,7 +488,7 @@ func _show_game_over() -> void:
 	panel.anchor_bottom = 0.5
 	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	panel.grow_vertical   = Control.GROW_DIRECTION_BOTH
-	panel.custom_minimum_size = Vector2(700, 0)
+	panel.custom_minimum_size = Vector2(900, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel.gui_input.connect(func(ev: InputEvent): get_viewport().set_input_as_handled())
 	cl.add_child(panel)
@@ -499,7 +499,7 @@ func _show_game_over() -> void:
 	panel.add_child(margin)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 24)
+	vbox.add_theme_constant_override("separation", 4)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(vbox)
 
@@ -514,30 +514,49 @@ func _show_game_over() -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# Embed the live scoreboard node directly (reparent temporarily)
+	var _gap := Control.new()
+	_gap.custom_minimum_size.y = 20.0
+	_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_gap)
+
+	# Embed a centered duplicate of the scoreboard
 	var scoreboard := get_node_or_null("UI/CanvasLayer/Scoreboard")
 	if scoreboard and is_instance_valid(scoreboard):
-		# Wrap in a Control so the Node2D scoreboard sits inside the vbox
+		var sb_scale      := 1.5
+		var il_local_h    := 400.0
+		var panel_content := 900.0 - 56.0
+		# effective visual width: ItemList(641) * its scale(0.8) * Node2D(1.2) * sb_scale(1.5)
+		var sb_visual_w   := 641.0 * 0.8 * 1.2 * sb_scale
+		var sb_visual_h   := il_local_h * 0.8 * 1.2 * sb_scale
+		var center_x      := (panel_content - sb_visual_w) * 0.5
 		var wrapper := Control.new()
-		wrapper.custom_minimum_size = Vector2(640, 120)
+		wrapper.custom_minimum_size = Vector2(panel_content, sb_visual_h)
 		wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		vbox.add_child(wrapper)
 		var sb_copy := scoreboard.duplicate(DUPLICATE_USE_INSTANTIATION)
-		sb_copy.position = Vector2.ZERO
-		sb_copy.scale = Vector2(1.5, 1.5)
-		wrapper.custom_minimum_size = Vector2(640, 120 * 1.5)
+		sb_copy.position = Vector2(35.0, 0)
+		sb_copy.scale    = Vector2(sb_scale, sb_scale)
 		wrapper.add_child(sb_copy)
+		# Remove scrollbar by forcing ItemList tall enough
+		var copy_il := sb_copy.get_node_or_null("ItemList")
+		if copy_il:
+			copy_il.size.y = il_local_h
+			copy_il.custom_minimum_size.y = il_local_h
+		# Copy final-game accumulators so cols 0 & 2 reflect end state
+		var orig_il := scoreboard.get_node_or_null("ItemList")
+		if orig_il and copy_il:
+			copy_il.set("_team_yield",     orig_il.get("_team_yield").duplicate())
+			copy_il.set("_team_delivered", orig_il.get("_team_delivered").duplicate())
+			copy_il.call("_rebuild_team_rows")
 
-	# Wire scoreboard HUD button to re-show overlay
-	var sb_node := get_node_or_null("UI/CanvasLayer/Scoreboard")
-	if sb_node and not sb_node.has_node("_GameOverBtn"):
-		var sb_btn := Button.new()
-		sb_btn.name = "_GameOverBtn"
-		sb_btn.flat = true
-		sb_btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		sb_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		sb_btn.pressed.connect(func(): cl.visible = true)
-		sb_node.add_child(sb_btn)
+	# Clicking the live scoreboard after game over reopens the overlay
+	var hud_il := get_node_or_null("UI/CanvasLayer/Scoreboard/ItemList")
+	if hud_il and not hud_il.get_meta("_go_wired", false):
+		hud_il.set_meta("_go_wired", true)
+		hud_il.gui_input.connect(func(ev: InputEvent):
+			if ev is InputEventMouseButton and ev.pressed:
+				cl.visible = true
+				get_viewport().set_input_as_handled())
 
 func _get_active_cam() -> Camera2D:
 	if is_instance_valid(_free_cam) and _free_cam.enabled:

@@ -82,11 +82,11 @@ func set_active_camera(index):
 	if ui and ui.has_method("set_team_color"):
 		ui.set_team_color(resolved_color)
 
-	# Show only the active player's fuel bar
+	# Show only the active player's HUD canvas
 	for p in players:
-		var fb = p.get("fuel_bar")
-		if is_instance_valid(fb):
-			fb.visible = (p == active_player)
+		var cl = p.get_node_or_null("CanvasLayer")
+		if cl:
+			cl.visible = (p == active_player)
 	if active_player.has_method("set_fuel_bar_color"):
 		active_player.set_fuel_bar_color(resolved_color)
 

@@ -5,11 +5,7 @@ func _ready() -> void:
 	var ls := LabelSettings.new()
 	ls.font_size = 16
 	ls.font_color = Color(0, 0, 0, 1)
-	var vf := SystemFont.new()
-	vf.font_names = PackedStringArray(["Segoe UI", "Helvetica Neue", "SF Pro Display", "Arial", "sans-serif"])
-	vf.font_weight = 100
-	vf.font_stretch = 75   # condensed helps appear thinner visually
-	ls.font = vf
+	ls.font = load("res://fonts/SEGOEUI.TTF")
 	label_settings = ls
 
 func _process(_delta: float) -> void:

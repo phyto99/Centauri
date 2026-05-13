@@ -94,11 +94,13 @@ alignment = 0
 expand_icon = true
 
 [node name="playerpanel" type="Sprite2D" parent="UI/CanvasLayer"]
+visible = false
 position = Vector2(183, 618)
 scale = Vector2(0.8, 0.8)
 texture = ExtResource("11_st4vk")
 
 [node name="playercrops" type="Label" parent="UI/CanvasLayer"]
+visible = false
 modulate = Color(0.137255, 0.898039, 1, 1)
 offset_left = 234.0
 offset_top = 592.0
@@ -119,7 +121,7 @@ offset_right = 996.0
 offset_bottom = 653.0
 theme_override_colors/font_color = Color(0, 0, 0, 1)
 theme_override_font_sizes/font_size = 15
-text = "900"
+text = "??? MOVES REMAINING"
 horizontal_alignment = 2
 script = ExtResource("16_o5c86")
 

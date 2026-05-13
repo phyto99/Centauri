@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "PowerShell(git add ColyseusSync.gd GameConfig.gd PlanetBuilder.gd main.gd menu.gd movesleft_2.gd planet_tooltip.gd player.gd project.godot ui.gd NetManager.gd PlayerSpawner.gd Toast.gd)",
-      "PowerShell(git add -A)"
+      "PowerShell(git add -A)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }
