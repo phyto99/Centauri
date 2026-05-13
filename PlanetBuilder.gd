@@ -625,7 +625,15 @@ func _input(event):
 		var current_cell_team: int = grid[closest_hex].get("team_id", -1)
 
 		# Snapshot action now — before any state mutation
+		# Read from UI so last-pressed button always wins, even after landing on a new planet
 		var action_to_apply: int = current_action
+		var ui_nodes := get_tree().get_nodes_in_group("ui_controller")
+		if ui_nodes.size() > 0:
+			var ui_mode: String = ui_nodes[0].get_current_mode()
+			if ui_mode == "cultivate":
+				action_to_apply = CellState.CULTIVATED
+			elif ui_mode == "claim":
+				action_to_apply = CellState.CLAIMED
 
 		if action_to_apply == CellState.CULTIVATED:
 			# Cultivate only lands on empty cells
