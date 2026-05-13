@@ -16,6 +16,8 @@ const SIM_STEP  := 0.016
 # ── Session state ─────────────────────────────────────────────────────────────
 var _session_duration: float = 120.0   # seconds
 var _session_time:     float = 0.0
+var _session_end_wall: float = 0.0    # Unix timestamp when session ends (multiplayer only)
+var _is_mp:            bool  = false  # true when running in a Colyseus room
 var _running:          bool  = false
 var _sim_accumulator:  float = 0.0
 var _start_btn:        Button = null
@@ -35,12 +37,14 @@ var _session_cl:       CanvasLayer = null
 func _ready() -> void:
 	add_to_group("main")
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_is_mp = OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty()
 	_build_session_ui()
 	GameConfig.game_started.connect(_on_game_started)
 	GameConfig.settings_changed.connect(_on_settings_changed_main)
 	_build_free_cam()
-	if OS.get_name() != "Web" or ColyseusSync.room_id.is_empty():
+	if not _is_mp:
 		spawn_players()
+		call_deferred("_bake_traj")
 	else:
 		# Multiplayer: start in free-cam pan mode until game begins
 		_pre_game = true
@@ -80,6 +84,7 @@ func _on_game_started(cfg: Dictionary) -> void:
 	PlayerSpawner._main_node = self
 	# End pre-game pan — player.gd's _on_game_started_player re-enables ship camera
 	_pre_game = false
+	_user_panned = false
 	if is_instance_valid(_free_cam):
 		_free_cam.enabled = false
 	# Apply session duration if admin sent one
@@ -92,6 +97,7 @@ func _on_game_started(cfg: Dictionary) -> void:
 	if start_at_ms > 0:
 		var now_ms: float = Time.get_unix_time_from_system() * 1000.0
 		delay_sec = max(1, int(ceil((start_at_ms - now_ms) / 1000.0)))
+		_session_end_wall = start_at_ms / 1000.0 + _session_duration
 	if not _countdown_active and not _running:
 		_on_start_pressed(delay_sec)
 
@@ -315,11 +321,13 @@ func _load_map_from_dict(data: Dictionary) -> void:
 		_velocities[planet.get_instance_id()] = vel
 
 	_session_time = 0.0
+	_session_end_wall = 0.0
 	_running = false
 	GameConfig.game_running = false
 	_update_timebar()
 	if _start_btn:
 		_start_btn.text = "▶ Start"
+	_bake_traj()
 
 var _countdown_active: bool = false
 
@@ -381,6 +389,8 @@ func _run_countdown(seconds: int = 10) -> void:
 
 	cl.queue_free()
 	_countdown_active = false
+	if _session_end_wall == 0.0:
+		_session_end_wall = Time.get_unix_time_from_system() + _session_duration
 	_running = true
 	GameConfig.game_running = true
 	for ship in get_tree().get_nodes_in_group("players"):
@@ -493,6 +503,13 @@ func _physics_process(delta: float) -> void:
 
 # ── Process — UI/timebar/explosions only ──────────────────────────────────────
 func _process(delta: float) -> void:
+	# Pre-game: keep free cam locked on local ship unless user has panned
+	if _pre_game and not _user_panned and is_instance_valid(_free_cam) and _free_cam.enabled:
+		for ship in get_tree().get_nodes_in_group("players"):
+			if is_instance_valid(ship) and ship.get("is_local"):
+				_free_cam.global_position = ship.global_position
+				break
+
 	if not _running:
 		return
 
@@ -502,12 +519,21 @@ func _process(delta: float) -> void:
 		exp.alpha = max(0.0, 1.0 - (exp.radius / exp.max_radius))
 	_explosions = _explosions.filter(func(e): return e.alpha > 0.0 and e.radius < e.max_radius)
 
-	_session_time = min(_session_time + delta, _session_duration)
-	_update_timebar()
-	if _session_time >= _session_duration:
-		_running = false
-		GameConfig.game_running = false
-		_show_game_over()
+	if _is_mp and _session_end_wall > 0.0:
+		var remaining := _session_end_wall - Time.get_unix_time_from_system()
+		_session_time = clampf(_session_duration - remaining, 0.0, _session_duration)
+		_update_timebar()
+		if remaining <= 0.0:
+			_running = false
+			GameConfig.game_running = false
+			_show_game_over()
+	else:
+		_session_time = min(_session_time + delta, _session_duration)
+		_update_timebar()
+		if _session_time >= _session_duration:
+			_running = false
+			GameConfig.game_running = false
+			_show_game_over()
 
 	queue_redraw()
 
@@ -521,6 +547,19 @@ func _init_timebar_sprite() -> void:
 		_fit_timebar()
 		get_viewport().size_changed.connect(_fit_timebar)
 		_set_timebar_progress(1.0)
+
+	# Transparent hit zone over timebar for hover preview
+	var tb_hit := ColorRect.new()
+	tb_hit.color = Color.TRANSPARENT
+	tb_hit.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	tb_hit.custom_minimum_size = Vector2(0, 16)
+	tb_hit.mouse_filter = Control.MOUSE_FILTER_STOP
+	_session_cl.add_child(tb_hit)
+	tb_hit.mouse_exited.connect(func(): _set_ghosts_visible(false))
+	tb_hit.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseMotion and not _running and not GameConfig.game_running:
+			_timebar_hover_pct = clamp(ev.position.x / tb_hit.size.x, 0.0, 1.0)
+			_update_ghost_preview())
 
 func _fit_timebar() -> void:
 	if not is_instance_valid(_timebar_sprite) or not _timebar_sprite.texture:
@@ -538,11 +577,105 @@ func _set_timebar_progress(value: float) -> void:
 	if _timebar_sprite and _timebar_sprite.material is ShaderMaterial:
 		_timebar_sprite.material.set_shader_parameter("progress", value)
 
-var _game_over: bool = false
-var _pre_game:  bool = false
-var _pan_last: Vector2 = Vector2.ZERO
-var _panning: bool = false
-var _free_cam: Camera2D = null
+var _game_over:   bool = false
+var _pre_game:    bool = false
+var _pan_last:    Vector2 = Vector2.ZERO
+var _panning:     bool = false
+var _user_panned: bool = false
+var _free_cam:    Camera2D = null
+
+# ── Trajectory preview ────────────────────────────────────────────────────────
+const _BAKE_DT          := 1.0   # seconds per keyframe — matches mapmaker TRAJ_DT
+const _BAKE_STEPS_PER_FRAME := 16  # keyframes computed per deferred frame
+
+var _bake_gen:          int   = 0    # incremented on each new bake; aborts stale ones
+var _traj_table:        Array = []   # [{time, positions: {pid→Vector2}}]
+var _ghost_sprites:     Array = []   # Sprite2D ghost nodes, one per non-sun planet
+var _timebar_hover_pct: float = 0.0
+
+func _bake_traj() -> void:
+	_bake_gen += 1
+	var my_gen := _bake_gen
+	_traj_table.clear()
+	_set_ghosts_visible(false)
+
+	var bodies: Array = []
+	for planet in get_tree().get_nodes_in_group("planets"):
+		if not is_instance_valid(planet):
+			continue
+		var pid := planet.get_instance_id()
+		bodies.append({
+			"id":     pid,
+			"pos":    Vector2(planet.position),
+			"vel":    Vector2(_velocities.get(pid, Vector2.ZERO)),
+			"mass":   float(planet.mass),
+			"anchor": _is_anchor(planet),
+			"acc":    Vector2.ZERO,
+		})
+
+	var total_steps := int(ceil(_session_duration / _BAKE_DT)) + 1
+	for step in range(total_steps):
+		var positions: Dictionary = {}
+		for b in bodies:
+			positions[b.id] = Vector2(b.pos)
+		_traj_table.append({"time": step * _BAKE_DT, "positions": positions})
+		_nbody_step(bodies, _BAKE_DT)
+		if step % _BAKE_STEPS_PER_FRAME == 0:
+			await get_tree().process_frame
+			if _bake_gen != my_gen:
+				return
+	if _bake_gen == my_gen:
+		_build_ghost_sprites()
+
+func _build_ghost_sprites() -> void:
+	for g in _ghost_sprites:
+		if is_instance_valid(g):
+			g.queue_free()
+	_ghost_sprites.clear()
+	for planet in get_tree().get_nodes_in_group("planets"):
+		if not is_instance_valid(planet) or planet.get("is_sun"):
+			continue
+		var outline = planet.get("outline_sprite")
+		if not outline or not is_instance_valid(outline):
+			continue
+		var ghost := Sprite2D.new()
+		ghost.texture  = (outline as Sprite2D).texture
+		ghost.scale    = (outline as Sprite2D).scale
+		ghost.rotation = (outline as Sprite2D).rotation
+		if (outline as Sprite2D).material:
+			ghost.material = (outline as Sprite2D).material.duplicate()
+		ghost.modulate = Color(1.0, 1.0, 1.0, 0.5)
+		ghost.z_index  = -1
+		ghost.visible  = false
+		ghost.set_meta("planet_id", planet.get_instance_id())
+		add_child(ghost)
+		_ghost_sprites.append(ghost)
+
+func _set_ghosts_visible(v: bool) -> void:
+	for g in _ghost_sprites:
+		if is_instance_valid(g):
+			g.visible = v
+
+func _update_ghost_preview() -> void:
+	if _traj_table.size() < 2 or _ghost_sprites.is_empty():
+		return
+	if _running or GameConfig.game_running:
+		_set_ghosts_visible(false)
+		return
+	var t    := (1.0 - _timebar_hover_pct) * _session_duration
+	var idx  := clampi(int(t / _BAKE_DT), 0, _traj_table.size() - 2)
+	var kf0: Dictionary = _traj_table[idx]
+	var kf1: Dictionary = _traj_table[idx + 1]
+	var f    := (t - float(kf0.time)) / _BAKE_DT
+	for ghost in _ghost_sprites:
+		if not is_instance_valid(ghost):
+			continue
+		var pid: int = ghost.get_meta("planet_id", -1)
+		if not kf0.positions.has(pid) or not kf1.positions.has(pid):
+			ghost.visible = false
+			continue
+		ghost.position = (kf0.positions[pid] as Vector2).lerp(kf1.positions[pid] as Vector2, f)
+		ghost.visible  = true
 
 func _show_game_over() -> void:
 	_game_over = true
@@ -683,6 +816,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_panning = event.pressed
 		elif event is InputEventMouseMotion and _panning and is_instance_valid(_free_cam):
 			_free_cam.global_position -= event.relative / _free_cam.zoom.x
+			_user_panned = true
 		return
 
 	if not _game_over:
@@ -764,6 +898,9 @@ func _respawn_mp_test() -> void:
 	await get_tree().process_frame
 	spawn_players()
 	_update_mp_test_total_label()
+	var cm := get_tree().get_first_node_in_group("camera_manager")
+	if cm and cm.has_method("refresh_players"):
+		cm.call("refresh_players")
 
 func spawn_random_planets() -> void:
 	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()

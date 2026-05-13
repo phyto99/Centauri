@@ -140,6 +140,7 @@ func _setup_as_sun() -> void:
 	editing_mode = true
 	freeze_mode = RigidBody2D.FREEZE_MODE_STATIC
 	freeze = true
+	mass = 18000.0
 	if current_size != 100:
 		current_size = 100
 		generate_grid()

@@ -4,7 +4,8 @@
       "PowerShell(git add ColyseusSync.gd GameConfig.gd PlanetBuilder.gd main.gd menu.gd movesleft_2.gd planet_tooltip.gd player.gd project.godot ui.gd NetManager.gd PlayerSpawner.gd Toast.gd)",
       "PowerShell(git add -A)",
       "Bash(python3 -c ' *)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "PowerShell(Get-ChildItem -Path . -Force | Select-Object Name, @{Name='Type';Expression={if\\($_.PSIsContainer\\){'DIR'}else{'FILE'}}} | Format-Table -AutoSize)"
     ]
   }
 }

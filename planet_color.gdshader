@@ -13,5 +13,5 @@ void fragment() {
 	c = clamp(c, 0.0, 1.0);
 	vec3 tinted = planet_color.rgb * c * brightness;
 	tinted = clamp(tinted, vec3(0.0), vec3(1.0));
-	COLOR = vec4(tinted, tex.a);
+	COLOR = vec4(tinted, tex.a * COLOR.a);
 }

@@ -18,6 +18,10 @@ const _MAX_COLUMNS  = 8
 var _team_yield:     Dictionary = {}   # team_id → total yield grown
 var _team_delivered: Dictionary = {}   # team_id → crops delivered to sun (accumulated)
 
+# ── Remote peer state (populated via ColyseusSync game events) ────────────────
+var _remote_food:      Dictionary = {}  # peer_id → food_amount (int)
+var _remote_diversity: Dictionary = {}  # peer_id → diversity team count (int)
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _team_color(tid: int) -> Color:
@@ -66,18 +70,29 @@ func _get_dominion(tid: int) -> int:
 func _get_team_inventory(tid: int) -> int:
 	var total := 0
 	for ship in get_tree().get_nodes_in_group("players"):
-		if ship.get("team_id") == tid:
+		if ship.get("team_id") != tid:
+			continue
+		if ship.get("is_local"):
 			total += int(ship.get("food_amount") if ship.get("food_amount") != null else 0)
+		else:
+			var pid = ship.get("peer_id")
+			total += _remote_food.get(pid if pid != null else -1, 0)
 	return total
 
 # Number of distinct foreign teams whose taxed crops this team has delivered.
 func _get_team_diversity(tid: int) -> int:
+	var total := 0
 	for ship in get_tree().get_nodes_in_group("players"):
-		if ship.get("team_id") == tid:
+		if ship.get("team_id") != tid:
+			continue
+		if ship.get("is_local"):
 			var dt = ship.get("diversity_teams")
 			if dt != null:
-				return (dt as Array).size()
-	return 0
+				total += (dt as Array).size()
+		else:
+			var pid2 = ship.get("peer_id")
+			total += _remote_diversity.get(pid2 if pid2 != null else -1, 0)
+	return total
 
 # Sum of total_food_delivered across all players on this team.
 func _get_team_delivered(tid: int) -> int:
@@ -111,6 +126,7 @@ func _get_efficiency(tid: int) -> int:
 func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	get_tree().node_added.connect(_on_node_added)
+	ColyseusSync.game_event_received.connect(_on_remote_game_event)
 	for planet in get_tree().get_nodes_in_group("planets"):
 		_connect_planet(planet)
 	for ship in get_tree().get_nodes_in_group("players"):
@@ -172,6 +188,20 @@ func _on_inventory_changed(_team_id: int) -> void:
 
 func _on_state_changed() -> void:
 	_rebuild_team_rows()
+
+func _on_remote_game_event(etype: String, data: Dictionary) -> void:
+	var pid: int = int(data.get("peer_id", 0))
+	match etype:
+		"food_delivered":
+			var tid: int = int(data.get("team_id", 0))
+			var amount: int = int(data.get("amount", 0))
+			_team_delivered[tid] = _team_delivered.get(tid, 0) + amount
+			_remote_food[pid] = 0
+			_remote_diversity[pid] = int(data.get("diversity_count", 0))
+			_rebuild_team_rows()
+		"food_inventory_changed":
+			_remote_food[pid] = int(data.get("food_amount", 0))
+			_rebuild_team_rows()
 
 # Widths derived from header placeholder texts in scoreboard.tscn (max of both header rows).
 # Cols 0-2 are variable (large numbers truncated with ellipsis); cols 3-7 are bounded.

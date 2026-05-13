@@ -6,6 +6,7 @@ signal player_joined(peer_id: int, team_id: int, player_name: String)
 signal player_left(peer_id: int)
 signal player_team_changed(peer_id: int, team_id: int)
 signal player_name_changed(peer_id: int, player_name: String)
+signal game_event_received(event_type: String, data: Dictionary)
 
 var room_id: String = ""
 var known_players: Dictionary = {}  # peer_id → {name, team_id}
@@ -43,6 +44,12 @@ func change_local_name(new_name: String) -> void:
 	if OS.get_name() == "Web":
 		JavaScriptBridge.eval("if(window._centauriChangeName) window._centauriChangeName(%s);" % JSON.stringify(new_name))
 
+func send_game_event(type: String, data: Dictionary) -> void:
+	if OS.get_name() != "Web":
+		return
+	data["type"] = type
+	JavaScriptBridge.eval("if(window._centauriSendGameEvent) window._centauriSendGameEvent(%s);" % JSON.stringify(data))
+
 func _register_callbacks() -> void:
 	_settings_cb = JavaScriptBridge.create_callback(_on_settings)
 	_start_cb    = JavaScriptBridge.create_callback(_on_start)
@@ -74,7 +81,9 @@ func _colyseus_js() -> String:
 			var client = new Colyseus.Client(wsProto + '//' + window.location.host);
 			client.joinById(roomId, { name: window._centauriPlayerName || 'Player' }).then(function(room) {
 				console.log('ColyseusSync: joined room', roomId, 'as session', room.sessionId);
+				window._centauriRoom = room;
 				window._centauriChangeName = function(n) { room.send('change_name', { name: n }); };
+				window._centauriSendGameEvent = function(json) { room.send('game_event', JSON.parse(json)); };
 				room.onMessage('settings_update', function(data) {
 					if (window._godotSettingsCallback)
 						window._godotSettingsCallback(JSON.stringify(data.config || data));
@@ -104,6 +113,27 @@ func _colyseus_js() -> String:
 				room.onMessage('player_name_changed', function(data) {
 					if (window._godotMessageCallback)
 						window._godotMessageCallback(JSON.stringify({type:'player_name_changed', peerId:data.peerId, name:data.name}));
+				});
+				room.onMessage('game_event', function(data) {
+					if (window._godotMessageCallback)
+						window._godotMessageCallback(JSON.stringify({type:'game_event', eventType:data.type, data:data}));
+				});
+				room.onLeave(function(code) {
+					console.log('ColyseusSync: room left, code', code);
+					window._centauriRoom = null;
+					window._centauriSendGameEvent = null;
+					if (code !== 1000) {
+						setTimeout(function() {
+							console.log('ColyseusSync: reconnecting...');
+							window._centauriConnect(roomId);
+						}, 2000);
+					}
+				});
+				document.addEventListener('visibilitychange', function() {
+					if (document.visibilityState === 'visible' && !window._centauriRoom) {
+						console.log('ColyseusSync: reconnecting after tab restore');
+						window._centauriConnect(roomId);
+					}
 				});
 			}).catch(function(e) {
 				console.error('ColyseusSync: could not join room', roomId, e);
@@ -158,6 +188,11 @@ func _on_message(args: Array) -> void:
 			if known_players.has(pid):
 				known_players[pid]["name"] = nm
 			player_name_changed.emit(pid, nm)
+		"game_event":
+			var etype: String = str(msg.get("eventType", ""))
+			var edata: Variant = msg.get("data", {})
+			if edata is Dictionary:
+				game_event_received.emit(etype, edata as Dictionary)
 
 func team_for_peer(peer_id: int) -> int:
 	if known_players.has(peer_id):
@@ -167,10 +202,11 @@ func team_for_peer(peer_id: int) -> int:
 func _room_id_from_url() -> String:
 	var href: String = JavaScriptBridge.eval("window.location.pathname")
 	var parts := href.strip_edges().split("/")
-	# Room IDs are alphanumeric (no hyphens) and at least 6 chars.
-	# Skip known path segments like "centauri" and "centauri-mapmaker".
+	# Take the last non-empty segment that isn't a known path prefix.
+	# Colyseus room IDs can contain hyphens (e.g. "QTJ-JKgZL") so don't filter on that.
+	const SKIP := ["", "centauri", "centauri-mapmaker", "index.html"]
 	for i in range(parts.size() - 1, -1, -1):
 		var seg: String = parts[i]
-		if seg.length() >= 6 and not seg.contains("-") and seg != "centauri":
+		if seg.length() >= 6 and seg not in SKIP:
 			return seg
 	return ""

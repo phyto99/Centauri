@@ -7,14 +7,17 @@
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_1yavt"]
 shader = ExtResource("1_splp2")
 shader_parameter/team_color = Color(1, 1, 1, 1)
+shader_parameter/alpha = 1.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_31sv1"]
 shader = ExtResource("1_splp2")
 shader_parameter/team_color = Color(1, 1, 1, 1)
+shader_parameter/alpha = 1.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_cqki8"]
 shader = ExtResource("1_splp2")
 shader_parameter/team_color = Color(1, 1, 1, 1)
+shader_parameter/alpha = 1.0
 
 [node name="Cultivate" type="Node2D"]
 material = SubResource("ShaderMaterial_1yavt")

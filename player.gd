@@ -7,9 +7,10 @@ enum { IDLE, MOVING }
 @export var spin_power: float = 40000.0
 @export var team_id: int = 0
 
-var is_local: bool = true
-var peer_id:  int  = 0
-var player_name: String = ""
+var is_local:        bool = true
+var peer_id:         int  = 0
+var player_name:     String = ""
+var _is_multiplayer: bool = false
 
 var _trail:           CPUParticles2D
 var _hud_cl:          CanvasLayer
@@ -27,7 +28,7 @@ var _crops_hud_label: Label
 @onready var camera        = $Camera2D
 @onready var ship_sprite   = $ShipSprite
 @onready var thrust_sprite = $ThrustSprite
-@onready var fuel_bar      = $CanvasLayer/FuelBar
+var fuel_bar: ColorRect
 
 var thrust       := Vector2.ZERO
 var rotation_dir: float = 0.0
@@ -72,9 +73,10 @@ func _ready() -> void:
 	# In multiplayer, keep camera off until game starts (free cam handles pre-game)
 	var _multiplayer := OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty()
 	camera.enabled = is_local and not _multiplayer
-	if is_local and _multiplayer:
+	if is_local:
 		_pulsing = true
-		GameConfig.game_started.connect(_on_game_started_player)
+		if _multiplayer:
+			GameConfig.game_started.connect(_on_game_started_player)
 
 static func _make_soft_circle() -> GradientTexture2D:
 	var grad := Gradient.new()
@@ -172,6 +174,8 @@ func _setup_land_detector() -> void:
 	area.body_entered.connect(_on_planet_contact)
 
 func _on_planet_contact(body: Node) -> void:
+	if not is_local:
+		return
 	if not body.is_in_group("planets"):
 		return
 	if not GameConfig.game_running:
@@ -195,6 +199,17 @@ func _on_planet_contact(body: Node) -> void:
 			total_food_delivered += delivered
 			emit_signal("food_delivered", team_id, delivered)
 			emit_signal("food_inventory_changed", team_id)
+			ColyseusSync.send_game_event("food_delivered", {
+				"peer_id": peer_id,
+				"team_id": team_id,
+				"amount": delivered,
+				"diversity_count": diversity_teams.size(),
+			})
+			ColyseusSync.send_game_event("food_inventory_changed", {
+				"peer_id": peer_id,
+				"team_id": team_id,
+				"food_amount": 0,
+			})
 	landed_planet = body
 	landing_offset = global_position - body.global_position
 	planet_rotation_at_landing = body.rotation
@@ -226,11 +241,15 @@ func change_state(new_state: int) -> void:
 	state = new_state
 	thrust_sprite.visible = (state == MOVING)
 
+func _set_ship_alpha(a: float) -> void:
+	if ship_sprite.material is ShaderMaterial:
+		(ship_sprite.material as ShaderMaterial).set_shader_parameter("alpha", a)
+	if is_instance_valid(_trail):
+		_trail.modulate.a = a
+
 func _on_game_started_player(_cfg: Dictionary) -> void:
 	_pulsing = false
-	ship_sprite.modulate.a = 1.0
-	if is_instance_valid(_trail):
-		_trail.modulate.a = 1.0
+	_set_ship_alpha(1.0)
 	camera.enabled = true
 	if is_instance_valid(_name_input):
 		_name_input.release_focus()
@@ -278,6 +297,12 @@ func add_food_from_source(amount: float, source_team: int) -> void:
 	food_by_source[source_team] = food_by_source.get(source_team, 0.0) + amount
 	food_amount += amount
 	emit_signal("food_inventory_changed", team_id)
+	if is_local:
+		ColyseusSync.send_game_event("food_inventory_changed", {
+			"peer_id": peer_id,
+			"team_id": team_id,
+			"food_amount": int(food_amount),
+		})
 
 func _notify_camera_manager() -> void:
 	var cm := get_tree().get_first_node_in_group("camera_manager")
@@ -316,11 +341,12 @@ func _process(delta: float) -> void:
 	if is_local:
 		get_input()
 	if _pulsing:
-		_pulse_time += delta
-		var a := 0.4 + 0.6 * (0.5 + 0.5 * sin(_pulse_time * TAU * 0.7))
-		ship_sprite.modulate.a = a
-		if is_instance_valid(_trail):
-			_trail.modulate.a = a
+		if GameConfig.game_running:
+			_pulsing = false
+			_set_ship_alpha(1.0)
+		else:
+			_pulse_time += delta
+			_set_ship_alpha(0.5 + 0.5 * cos(_pulse_time * TAU * 0.33))
 	update_fuel(delta)
 
 func _physics_process(_delta: float) -> void:

@@ -432,6 +432,8 @@ func _build_ui() -> void:
 	var rand_btn := Button.new()
 	rand_btn.text = "🎲"
 	rand_btn.tooltip_text = "Random seed"
+	var emoji_font := load("res://fonts/NotoEmoji-VariableFont_wght.ttf") as FontFile
+	rand_btn.add_theme_font_override("font", emoji_font)
 	rand_btn.pressed.connect(func():
 		var val: int = randi()
 		seed_input.text = str(val)

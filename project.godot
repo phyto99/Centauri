@@ -15,11 +15,11 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Centauri"
-config/icon="res://logo.svg"
 run/main_scene="res://main.tscn"
 run/disable_stdout=true
 config/features=PackedStringArray("4.3", "GL Compatibility")
 boot_splash/image="res://logo.svg"
+config/icon="res://logo.svg"
 
 [autoload]
 

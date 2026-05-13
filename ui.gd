@@ -7,8 +7,8 @@ const BAR_H  := 14.0
 var _game_over := false
 
 @export var planet_builder: NodePath
-@onready var size_slider = $SizeSlider
-@onready var size_label = $SizeLabel  # Reference to the label node
+@onready var size_slider = get_node_or_null("SizeSlider")
+@onready var size_label  = get_node_or_null("SizeLabel")
 @onready var builder = $"../PlanetBuilder"
 
 var _action_bar: ColorRect
