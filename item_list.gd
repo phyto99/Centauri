@@ -209,25 +209,34 @@ func _rebuild_team_rows() -> void:
 	if team_count <= 0:
 		team_count = 1
 
+	var rows: Array = []
 	for t in range(team_count):
 		var food_score := _get_food_score(t, team_count)
 		var diversity  := _get_team_diversity(t)
 		var dominion   := _get_dominion(t)
 		var efficiency := _get_efficiency(t)
-		var values := [
-			_format_millions(_team_yield.get(t, 0)),
-			_format_millions(_get_team_inventory(t)),
-			_format_millions(_team_delivered.get(t, 0)),
-			str(food_score),
-			str(diversity),
-			str(dominion),
-			str(efficiency),
-			str(food_score + diversity + dominion + efficiency),
-		]
-		var color: Color = _team_color(t)
+		var total      := food_score + diversity + dominion + efficiency
+		rows.append({
+			"values": [
+				_format_millions(_team_yield.get(t, 0)),
+				_format_millions(_get_team_inventory(t)),
+				_format_millions(_team_delivered.get(t, 0)),
+				str(food_score),
+				str(diversity),
+				str(dominion),
+				str(efficiency),
+				str(total),
+			],
+			"color": _team_color(t),
+			"total": total,
+		})
+	rows.sort_custom(func(a, b): return a["total"] > b["total"])
+
+	for row in rows:
+		var color: Color = row["color"]
 		var bg: Color    = Color(color.r, color.g, color.b, 0.25)
 		for col_idx in range(_MAX_COLUMNS):
-			var text := _fit_col_text(values[col_idx], col_idx)
+			var text := _fit_col_text(row["values"][col_idx], col_idx)
 			add_item(text)
 			var idx := item_count - 1
 			set_item_selectable(idx, false)

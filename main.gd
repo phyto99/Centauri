@@ -542,6 +542,7 @@ func _show_game_over() -> void:
 		if copy_il:
 			copy_il.size.y = il_local_h
 			copy_il.custom_minimum_size.y = il_local_h
+			copy_il.add_theme_constant_override("v_separation", 0)
 		# Copy final-game accumulators so cols 0 & 2 reflect end state
 		var orig_il := scoreboard.get_node_or_null("ItemList")
 		if orig_il and copy_il:
