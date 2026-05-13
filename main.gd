@@ -555,7 +555,11 @@ func _show_game_over() -> void:
 	if hud_il and not hud_il.get_meta("_go_wired", false):
 		hud_il.set_meta("_go_wired", true)
 		hud_il.gui_input.connect(func(ev: InputEvent):
-			if ev is InputEventMouseButton and ev.pressed:
+			if ev is InputEventMouseButton and ev.pressed \
+					and ev.button_index != MOUSE_BUTTON_WHEEL_UP \
+					and ev.button_index != MOUSE_BUTTON_WHEEL_DOWN \
+					and ev.button_index != MOUSE_BUTTON_WHEEL_LEFT \
+					and ev.button_index != MOUSE_BUTTON_WHEEL_RIGHT:
 				cl.visible = true
 				get_viewport().set_input_as_handled())
 
