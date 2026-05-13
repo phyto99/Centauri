@@ -646,14 +646,14 @@ func _input(event):
 			if current_cell_state == CellState.CULTIVATED and _is_in_triangle(closest_hex):
 				return
 
-		if moves_remaining <= 0:
+		if GameConfig.get_team_moves(acting_player.team_id) <= 0:
 			return
 
 		# Lock in team and action from the active player before any mutation
 		team_id = acting_player.team_id
 
-		moves_remaining -= 1
-		emit_signal("moves_updated", moves_remaining)
+		GameConfig.use_team_move(team_id)
+		emit_signal("moves_updated", GameConfig.get_team_moves(team_id))
 
 		if not closest_hex in claimed_nodes:
 			claimed_nodes.append(closest_hex)
@@ -1116,8 +1116,8 @@ func _on_collect_confirmed(food_amount: int, fuel_amount: int) -> void:
 	for t in team_yield_counts:
 		yield_count += team_yield_counts[t]
 
-	moves_remaining -= 1
-	emit_signal("moves_updated", moves_remaining)
+	GameConfig.use_team_move(team_id)
+	emit_signal("moves_updated", GameConfig.get_team_moves(team_id))
 	emit_signal("yield_updated", yield_count)
 	emit_signal("team_yield_updated", tid, 0)
 	emit_signal("tax_updated")

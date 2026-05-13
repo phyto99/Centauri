@@ -1,6 +1,7 @@
 extends Node
 
 var game_running:      bool  = false
+var team_move_pools:   Dictionary = {}  # team_id → moves remaining (global, never resets)
 var thrust_power:      float = 1000.0
 var thrust_depletion:  float = 10.0
 var fuel_efficiency:   float = 0.5
@@ -50,6 +51,12 @@ func _apply_team_colors(arr: Array) -> void:
 			((hex >> 8)  & 0xff) / 255.0,
 			( hex        & 0xff) / 255.0
 		))
+
+func get_team_moves(team_id: int) -> int:
+	return team_move_pools.get(team_id, 999)
+
+func use_team_move(team_id: int) -> void:
+	team_move_pools[team_id] = max(0, get_team_moves(team_id) - 1)
 
 func color_for(team_id: int) -> Color:
 	if team_colors.is_empty():
