@@ -271,8 +271,7 @@ func setup_collision_and_outline():
 		var shader_material = ShaderMaterial.new()
 		var shader = load("res://cyanwhite.gdshader")  # Make sure to use the correct path
 		shader_material.shader = shader
-		var team_color = Color(0, 1, 1, 1)
-		shader_material.set_shader_parameter("team_color", team_color)
+		shader_material.set_shader_parameter("team_color", GameConfig.color_for(team_id))
 		glow_sprite.material = shader_material
 		
 		
@@ -468,7 +467,7 @@ func _draw():
 			])
 			var alpha = clamp(0.5 * current_scale, 0.2, 0.5)
 			var tri_team = grid[triangle[0]].get("team_id", team_id)
-			var tri_color = team_colors[tri_team % team_colors.size()]
+			var tri_color = GameConfig.color_for(tri_team)
 			draw_colored_polygon(points, Color(tri_color.r, tri_color.g, tri_color.b, alpha))
 
 		# Draw grid lines on top of triangles
@@ -758,7 +757,7 @@ func _on_animation_timer_timeout():
 					
 					# Shader handles color; update param each frame in case team changed
 					var cell_team_id = cell_data.get("team_id", team_id)
-					var cell_team_color = team_colors[cell_team_id % team_colors.size()]
+					var cell_team_color = GameConfig.color_for(cell_team_id)
 					if overlay_sprite.material is ShaderMaterial:
 						overlay_sprite.material.set_shader_parameter("team_color", cell_team_color)
 					overlay_sprite.visible = true
@@ -775,15 +774,6 @@ func _on_animation_timer_timeout():
 					
 #var team_color = get_node("CameraController").team_color
 var team_id = 0  # Default team ID
-var team_colors = [
-	Color(0, 1, 1, 1),      # Cyan     (team 0)
-	Color(1, 0, 1, 1),      # Magenta  (team 1)
-	Color(0, 1, 0, 1),      # Lime     (team 2)
-	Color(1, 1, 0, 1),      # Yellow   (team 3)
-	Color(0, 0, 1, 1),      # Blue     (team 4)
-	Color(1, 0, 0, 1),      # Red      (team 5)
-	Color(0, 0.5, 0, 1),    # DkGreen  (team 6)
-]
 func set_team_color(id):
 	team_id = id
 	# When we change team, update all existing stamps
@@ -881,9 +871,7 @@ func _get_dominant_team_id() -> int:
 
 func _get_dominant_claim_color() -> Color:
 	var tid := _get_dominant_team_id()
-	if tid < 0:
-		return team_colors[team_id % team_colors.size()]
-	return team_colors[tid % team_colors.size()]
+	return GameConfig.color_for(tid if tid >= 0 else team_id)
 
 const _TAX_POPUP_SCENE := preload("res://tax_popup.tscn")
 
@@ -906,7 +894,7 @@ func _tint_sprite(node: Node, color: Color) -> void:
 		node.modulate = color
 
 func apply_team_color_to_stamp(stamp: Node):
-	var color = team_colors[team_id % team_colors.size()]
+	var color = GameConfig.color_for(team_id)
 	# The stamp root may itself be the Sprite2D (e.g. claim.tscn)
 	_tint_sprite(stamp, color)
 	for i in range(stamp.get_child_count()):
@@ -920,7 +908,7 @@ func update_stamp_appearance(stamp: Node, state: CellState):
 	var overlay_sprite = stamp.get_child(1)
 	
 	# Get the team color for this stamp
-	var team_color = team_colors[team_id % team_colors.size()]
+	var team_color = GameConfig.color_for(team_id)
 
 	match state:
 		CellState.CLAIMED:

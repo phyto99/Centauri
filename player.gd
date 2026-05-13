@@ -45,15 +45,6 @@ var planet_rotation_at_landing: float = 0.0
 var _pulsing:     bool = false
 var _pulse_time:  float = 0.0
 
-var team_colors := [
-	Color(0, 1, 1),
-	Color(1, 0, 1),
-	Color(0, 1, 0),
-	Color(1, 1, 0),
-	Color(0, 0, 1),
-	Color(1, 0, 0),
-	Color(0, 0.5, 0),
-]
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -67,10 +58,12 @@ func _ready() -> void:
 	set_team_color(team_id)
 	add_to_group("players")
 	_setup_land_detector()
-	if not is_instance_valid(fuel_bar):
-		_create_fuel_bar()
-	fuel_bar.color = GameConfig.color_for(team_id)
-	fuel_bar.visible = is_local
+	if is_local:
+		if not is_instance_valid(fuel_bar):
+			_create_fuel_bar()
+		fuel_bar.color = GameConfig.color_for(team_id)
+	elif is_instance_valid(fuel_bar):
+		fuel_bar.get_parent().visible = false
 	GameConfig.settings_changed.connect(_on_settings_changed)
 	_setup_trail()
 	# UI color update for local player

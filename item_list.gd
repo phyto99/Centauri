@@ -21,11 +21,7 @@ var _team_delivered: Dictionary = {}   # team_id → crops delivered to sun (acc
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _team_color(tid: int) -> Color:
-	for planet in get_tree().get_nodes_in_group("planets"):
-		var colors = planet.get("team_colors")
-		if colors and colors.size() > 0:
-			return colors[tid % colors.size()]
-	return Color(1, 1, 1)
+	return GameConfig.color_for(tid)
 
 func _get_active_team_count() -> int:
 	var max_id := -1
