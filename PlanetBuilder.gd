@@ -48,6 +48,7 @@ var max_scale_factor: float = 1
 @export var gravity_strength: float = 160.0   # G constant, matches mapmaker N-body (G_BASE * G_MULT)
 
 var planet_name: String = ""
+var planet_idx: int = -1  # stable cross-client identity; set by main.gd when loading from map JSON
 
 # ── Appearance ────────────────────────────────────────────────────────────────
 # Color index matches PLANET_COLORS order; texture index: 0=bluegreen, 1=sapphire
@@ -144,14 +145,9 @@ func _setup_as_sun() -> void:
 	if current_size != 100:
 		current_size = 100
 		generate_grid()
-	var white_mat := ShaderMaterial.new()
-	white_mat.shader = load("res://cyanwhite.gdshader")
-	white_mat.set_shader_parameter("team_color", Color.WHITE)
-	outline_sprite.material = white_mat
-	if glow_sprite.material is ShaderMaterial:
-		glow_sprite.material.set_shader_parameter("team_color", Color.WHITE)
-	glow_sprite.modulate = Color.WHITE
-	glow_sprite.visible = true
+	outline_sprite.texture = load("res://planet/Sun.png")
+	outline_sprite.material = null
+	glow_sprite.visible = false
 
 func disable_collision():
 	# Disable collision to allow the ship to pass through
@@ -422,9 +418,10 @@ func update_outline_size():
 	var base_size = outline_sprite.texture.get_size()
 	var outline_scale_factor = (desired_radius * 2) / min(base_size.x, base_size.y)
 	
-	outline_sprite.scale = Vector2(outline_scale_factor, outline_scale_factor)
+	var final_scale_factor: float = outline_scale_factor * (0.21 if is_sun else 1.0)
+	outline_sprite.scale = Vector2(final_scale_factor, final_scale_factor)
 	outline_sprite.position = center_position
-	
+
 	# Update collision shape
 	update_collision_shape(desired_radius)
 	
@@ -432,10 +429,8 @@ func update_outline_size():
 	glow_sprite.scale = outline_sprite.scale
 	glow_sprite.position = center_position
 	
-	# Show glow only if we have claimed nodes
-	glow_sprite.visible = claimed_nodes.size() > 0
-	if is_sun:
-		glow_sprite.visible = true
+	# Show glow only if there are claimed nodes (never for the sun)
+	glow_sprite.visible = not is_sun and claimed_nodes.size() > 0
 	
 func update_collision_shape(radius: float):
 	surface_radius = radius
@@ -677,6 +672,15 @@ func _input(event):
 
 		queue_redraw()
 
+		if OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty():
+			ColyseusSync.send_game_event("cell_placed", {
+				"peer_id":    acting_player.peer_id,
+				"planet_idx": planet_idx,
+				"hex_key":    closest_hex,
+				"action":     action_to_apply,
+				"team_id":    team_id,
+			})
+
 # Add point in polygon test function
 func is_point_in_polygon(point: Vector2, polygon: PackedVector2Array) -> bool:
 	var inside = false
@@ -719,6 +723,8 @@ var team_tax_earned_per_source: Dictionary = {}  # dominant_tid → {source_tid 
 func _on_animation_timer_timeout():
 	var main_node: Node = get_tree().get_first_node_in_group("main")
 	var game_running: bool = main_node != null and bool(main_node.get("_running"))
+	if not game_running:
+		return
 	var current_time = Time.get_ticks_msec() / 1000.0
 
 	for cell_data in grid.values():
@@ -781,7 +787,7 @@ func set_team_color(id):
 	update_all_stamps()
 
 func place_sprite_and_fill(grid_coords: Vector2, action: int = current_action):
-	var key = str(grid_coords.x) + "," + str(grid_coords.y)
+	var key = str(int(grid_coords.x)) + "," + str(int(grid_coords.y))
 	if not grid.has(key):
 		push_warning("Attempted to access invalid grid key: " + key)
 		return

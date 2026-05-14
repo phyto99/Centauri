@@ -83,7 +83,7 @@ func _colyseus_js() -> String:
 				console.log('ColyseusSync: joined room', roomId, 'as session', room.sessionId);
 				window._centauriRoom = room;
 				window._centauriChangeName = function(n) { room.send('change_name', { name: n }); };
-				window._centauriSendGameEvent = function(json) { room.send('game_event', JSON.parse(json)); };
+				window._centauriSendGameEvent = function(data) { room.send('game_event', data); };
 				room.onMessage('settings_update', function(data) {
 					if (window._godotSettingsCallback)
 						window._godotSettingsCallback(JSON.stringify(data.config || data));

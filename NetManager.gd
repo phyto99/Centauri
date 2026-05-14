@@ -4,7 +4,7 @@ extends Node
 
 signal peer_connected(peer_id: int)
 signal peer_disconnected(peer_id: int)
-signal position_received(peer_id: int, pos: Vector2, rot: float, thrusting: bool)
+signal position_received(peer_id: int, pos: Vector2, rot: float, thrusting: bool, planet_idx: int)
 
 const SEND_HZ := 20
 const TYPE_DATA        := 0
@@ -12,7 +12,8 @@ const TYPE_PEER_CONN   := 1
 const TYPE_PEER_DISC   := 2
 const TYPE_YOUR_ID     := 3
 
-var my_peer_id: int = 0
+var my_peer_id: int = 0        # relay-assigned peer_id (position packets)
+var colyseus_peer_id: int = 0  # Colyseus session peer_id (game events)
 var is_host: bool = false
 
 var _ws := WebSocketPeer.new()
@@ -28,7 +29,7 @@ func _ready() -> void:
 	# Native / no room: relay skipped, single-player only
 
 func _on_host_assigned(peer_id: int, ih: bool) -> void:
-	my_peer_id = peer_id
+	colyseus_peer_id = peer_id  # Colyseus session ID — used for game-event identity
 	is_host = ih
 
 func _connect_relay(room: String) -> void:
@@ -73,8 +74,9 @@ func _drain_packets() -> void:
 				_parse_position(peer_id, pkt.slice(5))
 
 func _parse_position(peer_id: int, payload: PackedByteArray) -> void:
-	# 9 bytes: float32 x, float32 y, float32 rot, uint8 thrusting
-	if payload.size() < 9:
+	# 13 bytes: float32 x, float32 y, float32 rot, uint8 thrusting
+	# +4 bytes: int32 planet_idx (-1 = flying)
+	if payload.size() < 13:
 		return
 	var buf := StreamPeerBuffer.new()
 	buf.data_array = payload
@@ -83,9 +85,10 @@ func _parse_position(peer_id: int, payload: PackedByteArray) -> void:
 	var y: float = buf.get_float()
 	var rot: float = buf.get_float()
 	var thrusting: bool = buf.get_u8() != 0
-	position_received.emit(peer_id, Vector2(x, y), rot, thrusting)
+	var planet_idx: int = buf.get_32() if payload.size() >= 17 else -1
+	position_received.emit(peer_id, Vector2(x, y), rot, thrusting, planet_idx)
 
-func send_position(pos: Vector2, rot: float, thrusting: bool) -> void:
+func send_position(pos: Vector2, rot: float, thrusting: bool, planet_idx: int = -1) -> void:
 	if _ws.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 	# dest 0 = broadcast to all peers
@@ -96,4 +99,5 @@ func send_position(pos: Vector2, rot: float, thrusting: bool) -> void:
 	buf.put_float(pos.y)
 	buf.put_float(rot)
 	buf.put_u8(1 if thrusting else 0)
+	buf.put_32(planet_idx)  # -1 = flying free
 	_ws.put_packet(buf.data_array)

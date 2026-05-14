@@ -21,6 +21,7 @@ var _cam: Camera2D
 var _is_panning: bool = false
 
 var _selected: Node = null
+var _updating_inspector: bool = false
 var _drag_start: Vector2
 
 # Per-planet velocity storage (instance_id → Vector2)
@@ -949,7 +950,7 @@ func _update_explosions(delta: float) -> void:
 		exp.alpha = max(0.0, 1.0 - (exp.radius / exp.max_radius))
 	_explosions = _explosions.filter(func(e): return e.alpha > 0.0 and e.radius < e.max_radius)
 
-func _reset_sim() -> void:
+func _reset_sim(reselect_idx: int = -1) -> void:
 	_running = false
 	_sim_time = 0.0
 	_sim_accumulator = 0.0
@@ -994,6 +995,11 @@ func _reset_sim() -> void:
 	_update_timebar()
 	_traj_dirty = true
 
+	if reselect_idx >= 0:
+		var planets := get_tree().get_nodes_in_group("planets")
+		if reselect_idx < planets.size():
+			_select(planets[reselect_idx])
+
 
 func _spawn_planet(pos: Vector2, vel: Vector2) -> void:
 	if not planet_scene:
@@ -1027,9 +1033,11 @@ func _select(planet: Node) -> void:
 	_selected = planet
 	_mode = Mode.SELECTED
 	_inspector.visible = true
+	_updating_inspector = true
 	_size_slider.value = planet.current_size
 	_mass_slider.value = planet.mass
 	_color_option.selected = planet.get("planet_color_index") if planet.get("planet_color_index") != null else 0
+	_updating_inspector = false
 	_traj_dirty = true
 
 
@@ -1041,15 +1049,23 @@ func _deselect() -> void:
 
 
 func _on_size_changed(value: float) -> void:
+	if _updating_inspector:
+		return
 	if _selected and is_instance_valid(_selected) and not _selected.get("is_sun"):
+		var idx := get_tree().get_nodes_in_group("planets").find(_selected)
 		_selected.on_slider_value_changed(value)
-		_reset_sim()
+		_rebuild_snapshots()
+		_reset_sim(idx)
 
 
 func _on_mass_changed(value: float) -> void:
+	if _updating_inspector:
+		return
 	if _selected and is_instance_valid(_selected) and not _selected.get("is_sun"):
+		var idx := get_tree().get_nodes_in_group("planets").find(_selected)
 		_selected.mass = value
-		_reset_sim()
+		_rebuild_snapshots()
+		_reset_sim(idx)
 
 
 func _on_color_changed(index: int) -> void:

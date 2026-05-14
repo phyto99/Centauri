@@ -43,8 +43,10 @@ var diversity_teams: Array = []       # foreign team_ids whose crops we've deliv
 var landed_planet: Node = null
 var landing_offset: Vector2 = Vector2.ZERO
 var planet_rotation_at_landing: float = 0.0
-var _pulsing:     bool = false
-var _pulse_time:  float = 0.0
+var _pulsing:       bool = false
+var _pulse_time:    float = 0.0
+var _trail_frozen:    bool = false
+var _trail_game_ran:  bool = false
 
 
 func _ready() -> void:
@@ -351,8 +353,21 @@ func _process(delta: float) -> void:
 
 func _physics_process(_delta: float) -> void:
 	if is_instance_valid(_trail):
-		_trail.emitting = (state == MOVING)
+		if _trail_frozen:
+			pass
+		elif GameConfig.game_running:
+			_trail_game_ran = true
+			_trail.emitting = (state == MOVING)
+		elif _trail_game_ran:
+			# Game just ended — freeze particles in place
+			_trail.emitting = false
+			_trail.speed_scale = 0.0
+			_trail_frozen = true
 	if not is_local:
+		# Track the landed planet every frame so motion is smooth, not 20-Hz-steppy.
+		if landed_planet != null and is_instance_valid(landed_planet):
+			var rot_delta: float = landed_planet.rotation - planet_rotation_at_landing
+			global_position = landed_planet.global_position + landing_offset.rotated(rot_delta)
 		constant_force  = Vector2.ZERO
 		constant_torque = 0.0
 		return
@@ -470,7 +485,7 @@ func _on_name_input_changed(new_text: String) -> void:
 
 func set_player_name(pname: String) -> void:
 	player_name = pname
-	if is_instance_valid(_name_input):
+	if is_instance_valid(_name_input) and _name_input.text != pname:
 		_name_input.text = pname
 	queue_redraw()
 

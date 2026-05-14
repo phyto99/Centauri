@@ -140,12 +140,6 @@ func _on_collect_pressed():
 			p._on_collect_pressed()
 
 func _update_button_states(new_mode: String):
-	# Reset all buttons to normal state
-	claim_button.button_pressed = false
-	cultivate_button.button_pressed = false
-
-	
-	# Set the pressed state for the active mode
 	match new_mode:
 		"claim":
 			claim_button.button_pressed = true
@@ -153,7 +147,10 @@ func _update_button_states(new_mode: String):
 			cultivate_button.button_pressed = true
 		"collect":
 			collect_button.button_pressed = true
-	
+		_:
+			claim_button.button_pressed = false
+			cultivate_button.button_pressed = false
+			collect_button.button_pressed = false
 	current_mode = new_mode
 	emit_signal("mode_changed", current_mode)
 

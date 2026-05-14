@@ -5,7 +5,11 @@
       "PowerShell(git add -A)",
       "Bash(python3 -c ' *)",
       "Bash(python -c ' *)",
-      "PowerShell(Get-ChildItem -Path . -Force | Select-Object Name, @{Name='Type';Expression={if\\($_.PSIsContainer\\){'DIR'}else{'FILE'}}} | Format-Table -AutoSize)"
+      "PowerShell(Get-ChildItem -Path . -Force | Select-Object Name, @{Name='Type';Expression={if\\($_.PSIsContainer\\){'DIR'}else{'FILE'}}} | Format-Table -AutoSize)",
+      "Bash(git -C \"c:\\\\Users\\\\Phyto\\\\Documents\\\\centauri\" status)",
+      "Bash(git -C \"c:\\\\Users\\\\Phyto\\\\Documents\\\\centauri\" diff)",
+      "Bash(git -C \"c:\\\\Users\\\\Phyto\\\\Documents\\\\centauri\" log --oneline -5)",
+      "Bash(dir \"C:\\\\Users\\\\Phyto\\\\Downloads\" /b)"
     ]
   }
 }

@@ -102,18 +102,13 @@ func _get_team_delivered(tid: int) -> int:
 			total += int(ship.get("total_food_delivered") if ship.get("total_food_delivered") != null else 0)
 	return total
 
-# Relative food score: leader = 100, others = their_delivered / leader * 100.
-func _get_food_score(tid: int, team_count: int) -> int:
-	var max_delivered := 0
-	for t in range(team_count):
-		var d: int = _team_delivered.get(t, 0)
-		if d > max_delivered:
-			max_delivered = d
-	if max_delivered <= 0:
+# leader = 100, others proportional. Returns 0 when no one has scored.
+func _relative(value: int, max_value: int) -> int:
+	if max_value <= 0:
 		return 0
-	return clampi(int(float(_team_delivered.get(tid, 0)) / float(max_delivered) * 100.0), 0, 100)
+	return clampi(int(float(value) / float(max_value) * 100.0), 0, 100)
 
-# food delivered / yield grown × 100, clamped 0-100.
+# food delivered / yield grown × 100, clamped 0-100 (absolute, used as raw input).
 func _get_efficiency(tid: int) -> int:
 	var grown: int = _team_yield.get(tid, 0)
 	var delivered: int = _team_delivered.get(tid, 0)
@@ -243,21 +238,36 @@ func _rebuild_team_rows() -> void:
 	if team_count <= 0:
 		team_count = 1
 
+	# Gather raw values across all teams so we can score relative to the leader.
+	var raw_delivered: Array = []
+	var raw_diversity: Array = []
+	var raw_dominion:  Array = []
+	var raw_efficiency: Array = []
+	for t in range(team_count):
+		raw_delivered.append(_team_delivered.get(t, 0))
+		raw_diversity.append(_get_team_diversity(t))
+		raw_dominion.append(_get_dominion(t))
+		raw_efficiency.append(_get_efficiency(t))
+
+	var max_delivered: int  = int(raw_delivered.max())  if not raw_delivered.is_empty()  else 0
+	var max_diversity: int  = int(raw_diversity.max())  if not raw_diversity.is_empty()  else 0
+	var max_dominion:  int  = int(raw_dominion.max())   if not raw_dominion.is_empty()   else 0
+
 	var rows: Array = []
 	for t in range(team_count):
-		var food_score := _get_food_score(t, team_count)
-		var diversity  := _get_team_diversity(t)
-		var dominion   := _get_dominion(t)
-		var efficiency := _get_efficiency(t)
-		var total      := food_score + diversity + dominion + efficiency
+		var food_score:      int = _relative(raw_delivered[t],  max_delivered)
+		var diversity_score: int = _relative(raw_diversity[t],  max_diversity)
+		var dominion_score:  int = _relative(raw_dominion[t],   max_dominion)
+		var efficiency:      int = raw_efficiency[t]   # absolute %, not relative
+		var total:           int = food_score + diversity_score + dominion_score + efficiency
 		rows.append({
 			"values": [
 				_format_millions(_team_yield.get(t, 0)),
 				_format_millions(_get_team_inventory(t)),
-				_format_millions(_team_delivered.get(t, 0)),
+				_format_millions(raw_delivered[t]),
 				str(food_score),
-				str(diversity),
-				str(dominion),
+				str(diversity_score),
+				str(dominion_score),
 				str(efficiency),
 				str(total),
 			],

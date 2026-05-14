@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://hdoj34ls38g2"]
+[gd_scene load_steps=25 format=3 uid="uid://hdoj34ls38g2"]
 
 [ext_resource type="Script" path="res://PlanetBuilder.gd" id="1_e5ibc"]
 [ext_resource type="Script" path="res://main.gd" id="1_omk3f"]
@@ -22,6 +22,8 @@
 [ext_resource type="Texture2D" uid="uid://yoegu2a48mq6" path="res://UI/Timebar.svg" id="17_20s6f"]
 [ext_resource type="PackedScene" uid="uid://c1gxva4thbixe" path="res://collect_label.tscn" id="19_yvwr0"]
 [ext_resource type="Script" path="res://planet_tooltip.gd" id="22_qouqt"]
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_actions"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_r6jxc"]
 shader = ExtResource("16_7gpu8")
@@ -68,6 +70,8 @@ offset_left = 965.0
 offset_top = 514.0
 offset_right = 1151.0
 offset_bottom = 554.0
+toggle_mode = true
+button_group = SubResource("ButtonGroup_actions")
 text = "     Claim"
 icon = ExtResource("11_q1aei")
 alignment = 0
@@ -78,6 +82,8 @@ offset_left = 965.0
 offset_top = 555.0
 offset_right = 1151.0
 offset_bottom = 591.0
+toggle_mode = true
+button_group = SubResource("ButtonGroup_actions")
 text = "    Cultivate"
 icon = ExtResource("12_yck52")
 alignment = 0

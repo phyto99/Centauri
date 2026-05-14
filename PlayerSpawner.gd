@@ -73,21 +73,49 @@ func _on_relay_peer_connected(peer_id: int) -> void:
 func _on_relay_peer_disconnected(peer_id: int) -> void:
 	_on_player_left(peer_id)
 
-func _on_position_received(peer_id: int, pos: Vector2, rot: float, thrusting: bool) -> void:
-	# Ignore position packets before the game starts — slot positions from
-	# _redistribute_ships() are authoritative until GameConfig.game_running.
+func _on_position_received(peer_id: int, pos: Vector2, rot: float, thrusting: bool, planet_idx: int) -> void:
 	if not GameConfig.game_running:
 		return
-	if _ships.has(peer_id) and peer_id != _local_peer_id:
-		var ship: Node = _ships[peer_id]
-		ship.global_position = pos
-		ship.global_rotation = rot
-		ship.call("set_thrusting", thrusting)
+	if not _ships.has(peer_id) or peer_id == _local_peer_id:
+		return
+	var ship: Node = _ships[peer_id]
+	ship.global_position = pos
+	ship.global_rotation = rot
+	ship.call("set_thrusting", thrusting)
+	# Give the remote ship its landing state so player.gd's physics loop
+	# moves it with the planet every frame (smooth), not just at 20 Hz (jittery).
+	if planet_idx >= 0:
+		var planet := _planet_by_idx(planet_idx)
+		if planet != null and is_instance_valid(planet):
+			ship.set("landed_planet", planet)
+			ship.set("landing_offset", pos - planet.global_position)
+			ship.set("planet_rotation_at_landing", planet.rotation)
+		else:
+			ship.set("landed_planet", null)
+	else:
+		ship.set("landed_planet", null)
+
+func _planet_by_idx(pidx: int) -> Node:
+	if _main_node == null:
+		_main_node = get_tree().get_first_node_in_group("main")
+	if _main_node == null:
+		return null
+	var dict: Variant = _main_node.get("_planet_by_idx")
+	if dict is Dictionary and (dict as Dictionary).has(pidx):
+		return (dict as Dictionary)[pidx]
+	return null
 
 func broadcast_local_position() -> void:
-	if _ships.has(_local_peer_id):
-		var ship: Node = _ships[_local_peer_id]
-		NetManager.send_position(ship.global_position, ship.global_rotation, ship.call("is_thrusting"))
+	if not _ships.has(_local_peer_id):
+		return
+	var ship: Node = _ships[_local_peer_id]
+	var planet_idx: int = -1
+	var lp: Variant = ship.get("landed_planet")
+	if lp != null and is_instance_valid(lp as Node):
+		var pidx: Variant = (lp as Node).get("planet_idx")
+		if pidx != null:
+			planet_idx = int(pidx)
+	NetManager.send_position(ship.global_position, ship.global_rotation, ship.call("is_thrusting"), planet_idx)
 
 func _spawn_local(peer_id: int) -> void:
 	var ship: Node = _load_player()

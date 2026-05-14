@@ -2,6 +2,7 @@ extends Node
 
 var game_running:      bool  = false
 var team_move_pools:   Dictionary = {}  # team_id → moves remaining (global, never resets)
+var team_moves:        int   = 300
 var thrust_power:      float = 1000.0
 var thrust_depletion:  float = 10.0
 var fuel_efficiency:   float = 0.5
@@ -32,6 +33,7 @@ func apply_settings(cfg: Dictionary) -> void:
 	if cfg.has("fuelRecovery"):     fuel_recovery     = float(cfg["fuelRecovery"])
 	if cfg.has("tickSpeed"):        tick_speed        = float(cfg["tickSpeed"])
 	if cfg.has("sessionDuration"):  session_duration  = maxf(10.0, float(cfg["sessionDuration"]))
+	if cfg.has("teamMoves"):        team_moves        = maxi(1, int(cfg["teamMoves"]))
 	if cfg.has("mapJson") and cfg["mapJson"] != null:
 		map_json = cfg["mapJson"]
 	if cfg.has("teamColors") and cfg["teamColors"] is Array:
@@ -53,7 +55,7 @@ func _apply_team_colors(arr: Array) -> void:
 		))
 
 func get_team_moves(team_id: int) -> int:
-	return team_move_pools.get(team_id, 999)
+	return team_move_pools.get(team_id, team_moves)
 
 func use_team_move(team_id: int) -> void:
 	team_move_pools[team_id] = max(0, get_team_moves(team_id) - 1)

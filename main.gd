@@ -26,6 +26,14 @@ var _start_btn:        Button = null
 # Planets are frozen; we drive them manually like the mapmaker
 var _velocities: Dictionary = {}
 
+# planet_idx → planet Node — populated in _load_map_from_dict for O(1) lookup
+var _planet_by_idx: Dictionary = {}
+
+# ── Planet-sim clock (wall-clock-based for cross-client sync) ─────────────────
+var _sim_start_wall:  float = 0.0  # Unix time when the sim "started" (same on all clients)
+var _total_sim_steps: int   = 0    # Steps taken so far on this client
+var _planet_broadcast_timer: float = 0.0
+
 # Explosion rings [{pos, radius, max_radius, alpha}]
 var _explosions: Array = []
 
@@ -37,11 +45,14 @@ var _session_cl:       CanvasLayer = null
 func _ready() -> void:
 	add_to_group("main")
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	DisplayServer.window_set_title("Centauri")
 	_is_mp = OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty()
 	_build_session_ui()
 	GameConfig.game_started.connect(_on_game_started)
 	GameConfig.settings_changed.connect(_on_settings_changed_main)
 	_build_free_cam()
+	if _is_mp:
+		ColyseusSync.game_event_received.connect(_on_remote_game_event)
 	if not _is_mp:
 		spawn_players()
 		call_deferred("_bake_traj")
@@ -72,7 +83,11 @@ func _center_free_cam() -> void:
 var _last_loaded_map_key: int = 0  # hash of last successfully queued map load
 
 func _on_settings_changed_main() -> void:
-	if _running or _countdown_active or GameConfig.map_json.is_empty():
+	if _running or _countdown_active:
+		return
+	_session_duration = GameConfig.session_duration
+	_update_timebar()
+	if GameConfig.map_json.is_empty():
 		return
 	var key := GameConfig.map_json.hash()
 	if key == _last_loaded_map_key:
@@ -87,10 +102,10 @@ func _on_game_started(cfg: Dictionary) -> void:
 	_user_panned = false
 	if is_instance_valid(_free_cam):
 		_free_cam.enabled = false
-	# Apply session duration if admin sent one
-	if cfg.has("sessionDuration"):
-		_session_duration = maxf(10.0, float(cfg["sessionDuration"]))
-		_update_timebar()
+	# GameConfig.apply_settings already ran with the inner config dict before
+	# game_started fired, so session_duration is authoritative here.
+	_session_duration = GameConfig.session_duration
+	_update_timebar()
 	# Compute how many seconds remain until server's intended start time
 	var start_at_ms: float = float(cfg.get("startAt", 0))
 	var delay_sec: int = 10
@@ -188,12 +203,7 @@ func _build_session_ui() -> void:
 		vbox.add_child(HSeparator.new())
 		_build_mp_test_panel(vbox)
 	else:
-		vbox.add_child(HSeparator.new())
-		var wait_lbl := Label.new()
-		wait_lbl.text = "Waiting for host..."
-		wait_lbl.add_theme_font_size_override("font_size", 11)
-		wait_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		vbox.add_child(wait_lbl)
+		panel.visible = false
 
 # ── Multiplayer test panel ────────────────────────────────────────────────────
 func _build_mp_test_panel(vbox: VBoxContainer) -> void:
@@ -292,6 +302,7 @@ func _load_map_from_dict(data: Dictionary) -> void:
 	var planets_data: Array = data.get("planets", []) as Array
 
 	# Clear existing non-sun planets
+	_planet_by_idx.clear()
 	for planet in get_tree().get_nodes_in_group("planets"):
 		if is_instance_valid(planet) and not planet.get("is_sun"):
 			_velocities.erase(planet.get_instance_id())
@@ -303,7 +314,8 @@ func _load_map_from_dict(data: Dictionary) -> void:
 		push_error("No sun found")
 		return
 
-	for pd in planets_data:
+	for i in range(planets_data.size()):
+		var pd = planets_data[i]
 		var planet := RigidBody2D.new()
 		planet.set_script(load("res://PlanetBuilder.gd"))
 		planet.sprite_scene          = sun.sprite_scene
@@ -315,6 +327,8 @@ func _load_map_from_dict(data: Dictionary) -> void:
 		planet.freeze                = true
 		planet.freeze_mode           = RigidBody2D.FREEZE_MODE_STATIC
 		add_child(planet)
+		planet.planet_idx = i
+		_planet_by_idx[i] = planet
 		planet.position = Vector2(float(pd.get("pos_x", 0.0)), float(pd.get("pos_y", 0.0)))
 		planet.apply_appearance()
 		var vel := Vector2(float(pd.get("vel_x", 0.0)), float(pd.get("vel_y", 0.0)))
@@ -391,6 +405,10 @@ func _run_countdown(seconds: int = 10) -> void:
 	_countdown_active = false
 	if _session_end_wall == 0.0:
 		_session_end_wall = Time.get_unix_time_from_system() + _session_duration
+	# Anchor the simulation clock to the authoritative start time so all clients
+	# advance the same number of N-body steps for a given wall-clock instant.
+	_sim_start_wall  = _session_end_wall - _session_duration
+	_total_sim_steps = 0
 	_running = true
 	GameConfig.game_running = true
 	for ship in get_tree().get_nodes_in_group("players"):
@@ -476,9 +494,25 @@ func _physics_process(delta: float) -> void:
 	if not _running:
 		return
 
-	_sim_accumulator += delta
-	while _sim_accumulator >= SIM_STEP:
-		_sim_accumulator -= SIM_STEP
+	# Wall-clock-based stepping keeps all clients at the same simulation step.
+	# _sim_start_wall is derived from the server-dictated startAt, so it's identical
+	# on every client regardless of frame rate or countdown timing jitter.
+	var steps_this_frame: int
+	if _sim_start_wall > 0.0:
+		var elapsed: float = Time.get_unix_time_from_system() - _sim_start_wall
+		var target: int = int(elapsed / SIM_STEP)
+		steps_this_frame = clampi(target - _total_sim_steps, 0, 8)
+	else:
+		# Fallback for local/dev mode (no server startAt)
+		_sim_accumulator += delta
+		steps_this_frame = 0
+		while _sim_accumulator >= SIM_STEP:
+			_sim_accumulator -= SIM_STEP
+			steps_this_frame += 1
+		steps_this_frame = min(steps_this_frame, 8)
+
+	for _s in range(steps_this_frame):
+		_total_sim_steps += 1
 		var bodies: Array = []
 		for planet in get_tree().get_nodes_in_group("planets"):
 			if not is_instance_valid(planet):
@@ -512,6 +546,14 @@ func _process(delta: float) -> void:
 
 	if not _running:
 		return
+
+	# Host periodically broadcasts authoritative planet positions so non-hosts
+	# correct any floating-point drift in their local N-body simulation.
+	if _is_mp and NetManager.is_host:
+		_planet_broadcast_timer += delta
+		if _planet_broadcast_timer >= 3.0:
+			_planet_broadcast_timer = 0.0
+			_broadcast_planet_positions()
 
 	# Update explosions
 	for exp in _explosions:
@@ -810,6 +852,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				cam.zoom *= 0.9
 				get_viewport().set_input_as_handled()
 
+	if event is InputEventKey and event.pressed and not event.echo:
+		var cam := _get_active_cam()
+		if cam:
+			if event.physical_keycode == KEY_EQUAL:
+				cam.zoom *= 1.1
+				get_viewport().set_input_as_handled()
+			elif event.physical_keycode == KEY_MINUS:
+				cam.zoom *= 0.9
+				get_viewport().set_input_as_handled()
+
 	# Panning: pre-game uses free cam; game-over uses ship cam
 	if _pre_game:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -847,6 +899,79 @@ func _draw() -> void:
 		var thickness: float = (2.0 + 18.0 * (1.0 - exp.alpha)) * inv_z
 		draw_arc(exp.pos, exp.radius, 0.0, TAU, 64,
 				Color(1.0, 1.0, 1.0, exp.alpha * 0.9), thickness)
+
+# ── Remote game events ────────────────────────────────────────────────────────
+func _on_remote_game_event(etype: String, data: Dictionary) -> void:
+	match etype:
+		"cell_placed":
+			_handle_remote_cell_placed(data)
+		"planet_positions":
+			# Non-hosts apply position corrections broadcast by the host.
+			if not NetManager.is_host:
+				_handle_remote_planet_positions(data)
+
+func _handle_remote_cell_placed(data: Dictionary) -> void:
+	var pidx: int       = int(data.get("planet_idx", -1))
+	var hex_key: String = str(data.get("hex_key", ""))
+	var action: int     = int(data.get("action", 0))
+	var team: int       = int(data.get("team_id", 0))
+	if pidx < 0 or hex_key.is_empty():
+		return
+	if not _planet_by_idx.has(pidx):
+		return
+	var planet: Node = _planet_by_idx[pidx]
+	if not is_instance_valid(planet):
+		_planet_by_idx.erase(pidx)
+		return
+	GameConfig.use_team_move(team)
+	planet.team_id = team
+	if not hex_key in planet.claimed_nodes:
+		planet.claimed_nodes.append(hex_key)
+	var parts := hex_key.split(",")
+	planet.place_sprite_and_fill(
+		Vector2(int(parts[0]), int(parts[1])),
+		action
+	)
+	if action == 2:  # CULTIVATED
+		planet.check_for_triangles()
+	elif action == 1:  # CLAIMED
+		var new_dominant: int = planet._get_dominant_team_id()
+		if new_dominant != planet.dominant_team_id:
+			planet.dominant_team_id = new_dominant
+			planet.tax_rate = 5
+	planet.queue_redraw()
+	planet.emit_signal("moves_updated", GameConfig.get_team_moves(team))
+
+func _handle_remote_planet_positions(data: Dictionary) -> void:
+	var positions: Array = data.get("positions", [])
+	for pdata in positions:
+		var pidx: int = int(pdata.get("i", -1))
+		if pidx < 0 or not _planet_by_idx.has(pidx):
+			continue
+		var planet: Node = _planet_by_idx[pidx]
+		if not is_instance_valid(planet):
+			continue
+		planet.position = Vector2(float(pdata.get("x", 0.0)), float(pdata.get("y", 0.0)))
+		_velocities[planet.get_instance_id()] = Vector2(float(pdata.get("vx", 0.0)), float(pdata.get("vy", 0.0)))
+
+func _broadcast_planet_positions() -> void:
+	var positions: Array = []
+	for planet in get_tree().get_nodes_in_group("planets"):
+		if not is_instance_valid(planet) or planet.get("is_sun"):
+			continue
+		var pidx: int = int(planet.get("planet_idx") if planet.get("planet_idx") != null else -1)
+		if pidx < 0:
+			continue
+		var vel: Vector2 = _velocities.get(planet.get_instance_id(), Vector2.ZERO)
+		positions.append({
+			"i":  pidx,
+			"x":  planet.position.x,
+			"y":  planet.position.y,
+			"vx": vel.x,
+			"vy": vel.y,
+		})
+	if not positions.is_empty():
+		ColyseusSync.send_game_event("planet_positions", {"positions": positions})
 
 # ── Spawn helpers ─────────────────────────────────────────────────────────────
 

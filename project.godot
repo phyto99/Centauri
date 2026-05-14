@@ -18,8 +18,10 @@ config/name="Centauri"
 run/main_scene="res://main.tscn"
 run/disable_stdout=true
 config/features=PackedStringArray("4.3", "GL Compatibility")
-boot_splash/image="res://logo.svg"
-config/icon="res://logo.svg"
+boot_splash/bg_color=Color(0, 0, 0, 1)
+boot_splash/image="res://planet/Sun.png"
+boot_splash/fullsize=false
+config/icon="res://planet/Sun.png"
 
 [autoload]
 
@@ -84,3 +86,4 @@ predict={
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0, 0, 0, 1)

@@ -294,15 +294,12 @@ func _rebuild_cultivate_badges(planet: Node) -> void:
 	var ttp        = planet.get("team_tax_paid")
 	var tte        = planet.get("team_tax_earned")
 	var dom_id: int = planet.get("dominant_team_id") if planet.get("dominant_team_id") != null else -1
-	var colors     = planet.get("team_colors")
 
 	var row_count := 0
 
 	# Dominant team always first
 	if dom_id >= 0:
-		var col := Color.WHITE
-		if colors and colors.size() > 0:
-			col = colors[dom_id % colors.size()]
+		var col := GameConfig.color_for(dom_id)
 		var gross: int = int(tyc.get(dom_id, 0)) if tyc else 0
 		var paid: int  = int(ttp.get(dom_id, 0.0)) if ttp else 0
 		var net: int   = max(0, gross - paid)
@@ -327,9 +324,7 @@ func _rebuild_cultivate_badges(planet: Node) -> void:
 
 	for entry in others:
 		var tid: int = entry[0]
-		var col := Color.WHITE
-		if colors and colors.size() > 0:
-			col = colors[tid % colors.size()]
+		var col := GameConfig.color_for(tid)
 		var gross: int = entry[1]
 		var paid: int  = int(ttp.get(tid, 0.0)) if ttp else 0
 		var net: int   = max(0, gross - paid)
@@ -623,9 +618,8 @@ func _refresh_claims(planet: Node) -> void:
 			dominant_count = team_counts[tid]
 			dominant_tid   = tid
 
-	var colors = planet.get("team_colors")
-	if dominant_tid >= 0 and colors and colors.size() > 0:
-		_team_color = colors[dominant_tid % colors.size()]
+	if dominant_tid >= 0:
+		_team_color = GameConfig.color_for(dominant_tid)
 	else:
 		_team_color = Color.WHITE
 
