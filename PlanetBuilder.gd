@@ -189,9 +189,36 @@ func update_stats():
 		efficiency = 0.0
 	emit_signal("efficiency_updated", efficiency)
 
+var _draw_segs: PackedVector2Array = PackedVector2Array()
+var _draw_cell_centers: PackedVector2Array = PackedVector2Array()
+var _draw_cell_radius: float = 0.0
+
+func _bake_draw_cache() -> void:
+	_draw_segs.clear()
+	_draw_cell_centers.clear()
+	_draw_cell_radius = 0.0
+	var keys := grid.keys()
+	for k in keys:
+		_draw_cell_centers.append(grid[k]["cell"].position)
+	for k in keys:
+		var cn = grid[k]["cell"]
+		if cn is Sprite2D and cn.texture:
+			_draw_cell_radius = cn.texture.get_size().x * 0.5 * cn.scale.x
+			break
+	for i in range(keys.size()):
+		for j in range(i + 1, keys.size()):
+			var k1 = keys[i]; var k2 = keys[j]
+			if is_adjacent(grid[k1], grid[k2]):
+				var pos1: Vector2 = grid[k1]["cell"].position
+				var pos2: Vector2 = grid[k2]["cell"].position
+				var dir := (pos2 - pos1).normalized()
+				var dist := pos1.distance_to(pos2)
+				var hd := dist * 0.30
+				_draw_segs.append(pos1 + dir * hd)
+				_draw_segs.append(pos1 + dir * (dist - hd))
+
 func _process(_delta):
-	update_cell_positions()
-	update_stats()
+	pass
 
 func _physics_process(_delta):
 	if is_sun or freeze:
@@ -344,6 +371,7 @@ func generate_grid():
 				float(key.split(",")[1])
 			))
 	check_for_triangles()
+	_bake_draw_cache()
 	queue_redraw()
 func center_grid():
 	if grid.is_empty():
@@ -448,47 +476,34 @@ func on_slider_value_changed(value: float):
 
 @export var outline_color: Color = Color(1, 1, 1, 0.8)  # White with alpha
 
-# Modified _draw function
 func _draw():
-	if grid.size() >= 2:
-		var current_scale = calculate_current_scale()
-		var line_width = 8.0 * current_scale
-		
-		# Draw triangles first so grid lines render on top
-		for triangle in triangles:
-			var points = PackedVector2Array([
-				grid[triangle[0]]["cell"].position,
-				grid[triangle[1]]["cell"].position,
-				grid[triangle[2]]["cell"].position
-			])
-			var alpha = clamp(0.5 * current_scale, 0.2, 0.5)
-			var tri_team = grid[triangle[0]].get("team_id", team_id)
-			var tri_color = GameConfig.color_for(tri_team)
-			draw_colored_polygon(points, Color(tri_color.r, tri_color.g, tri_color.b, alpha))
+	if grid.size() < 2:
+		return
+	var current_scale := calculate_current_scale()
+	var line_width := 8.0 * current_scale
 
-		# Draw grid lines on top of triangles
-		for key1 in grid.keys():
-			var pos1 = grid[key1]["cell"].position
-			for key2 in grid.keys():
-				if key1 != key2 and is_adjacent(grid[key1], grid[key2]):
-					var pos2 = grid[key2]["cell"].position
-					var direction = (pos2 - pos1).normalized()
-					var distance = pos1.distance_to(pos2)
-					var half_distance = distance * 0.30
-					var start_point = pos1 + (direction * half_distance)
-					var end_point = pos1 + (direction * (distance - half_distance))
-					draw_line(start_point, end_point, Color.WHITE, line_width)
+	# Triangles are small and team-colored — keep dynamic
+	for triangle in triangles:
+		var points := PackedVector2Array([
+			grid[triangle[0]]["cell"].position,
+			grid[triangle[1]]["cell"].position,
+			grid[triangle[2]]["cell"].position
+		])
+		var alpha := clamp(0.5 * current_scale, 0.2, 0.5)
+		var tri_team: int = grid[triangle[0]].get("team_id", team_id)
+		var tri_color := GameConfig.color_for(tri_team)
+		draw_colored_polygon(points, Color(tri_color.r, tri_color.g, tri_color.b, alpha))
 
-		# Black filled circles — same size as lattice1 sprite, above lines, below cell sprites
-		var cell_radius := 0.0
-		for k in grid.keys():
-			var cn = grid[k]["cell"]
-			if cn is Sprite2D and cn.texture:
-				cell_radius = cn.texture.get_size().x * 0.5 * cn.scale.x
-				break
-		if cell_radius > 0.0:
-			for k in grid.keys():
-				draw_circle(grid[k]["cell"].position, cell_radius, Color.BLACK)
+	# Cached line segments — O(n) instead of O(n²)
+	var i := 0
+	while i + 1 < _draw_segs.size():
+		draw_line(_draw_segs[i], _draw_segs[i + 1], Color.WHITE, line_width)
+		i += 2
+
+	# Cached cell circles
+	if _draw_cell_radius > 0.0:
+		for center in _draw_cell_centers:
+			draw_circle(center, _draw_cell_radius, Color.BLACK)
 
 
 func is_adjacent(cell1: Dictionary, cell2: Dictionary) -> bool:

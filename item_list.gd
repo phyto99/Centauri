@@ -22,6 +22,8 @@ var _team_delivered: Dictionary = {}   # team_id → crops delivered to sun (acc
 var _remote_food:      Dictionary = {}  # peer_id → food_amount (int)
 var _remote_diversity: Dictionary = {}  # peer_id → diversity team count (int)
 
+var _rebuild_dirty: bool = false
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _team_color(tid: int) -> Color:
@@ -137,10 +139,10 @@ func _on_node_added(node: Node) -> void:
 func _connect_deferred(node: Node) -> void:
 	if node.is_in_group("planets"):
 		_connect_planet(node)
-		_rebuild_team_rows()
+		_schedule_rebuild()
 	elif node.is_in_group("players"):
 		_connect_ship(node)
-		_rebuild_team_rows()
+		_schedule_rebuild()
 
 # ── Signal connections ────────────────────────────────────────────────────────
 
@@ -163,7 +165,17 @@ func _connect_ship(ship: Node) -> void:
 		ship.tree_exiting.connect(_on_ship_exiting)
 
 func _on_ship_exiting() -> void:
-	call_deferred("_rebuild_team_rows")
+	_schedule_rebuild()
+
+func _schedule_rebuild() -> void:
+	if _rebuild_dirty:
+		return
+	_rebuild_dirty = true
+	call_deferred("_do_rebuild")
+
+func _do_rebuild() -> void:
+	_rebuild_dirty = false
+	_rebuild_team_rows()
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
@@ -172,17 +184,17 @@ func _on_team_yield_updated(team_id: int, _count: int) -> void:
 	for planet in get_tree().get_nodes_in_group("planets"):
 		total += planet.team_yield_counts.get(team_id, 0)
 	_team_yield[team_id] = total
-	_rebuild_team_rows()
+	_schedule_rebuild()
 
 func _on_food_delivered(team_id: int, amount: int) -> void:
 	_team_delivered[team_id] = _team_delivered.get(team_id, 0) + amount
-	_rebuild_team_rows()
+	_schedule_rebuild()
 
 func _on_inventory_changed(_team_id: int) -> void:
-	_rebuild_team_rows()
+	_schedule_rebuild()
 
 func _on_state_changed() -> void:
-	_rebuild_team_rows()
+	_schedule_rebuild()
 
 func _on_remote_game_event(etype: String, data: Dictionary) -> void:
 	var pid: int = int(data.get("peer_id", 0))
@@ -193,10 +205,10 @@ func _on_remote_game_event(etype: String, data: Dictionary) -> void:
 			_team_delivered[tid] = _team_delivered.get(tid, 0) + amount
 			_remote_food[pid] = 0
 			_remote_diversity[pid] = int(data.get("diversity_count", 0))
-			_rebuild_team_rows()
+			_schedule_rebuild()
 		"food_inventory_changed":
 			_remote_food[pid] = int(data.get("food_amount", 0))
-			_rebuild_team_rows()
+			_schedule_rebuild()
 
 # Widths derived from header placeholder texts in scoreboard.tscn (max of both header rows).
 # Cols 0-2 are variable (large numbers truncated with ellipsis); cols 3-7 are bounded.
