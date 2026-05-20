@@ -81,6 +81,7 @@ func _center_free_cam() -> void:
 	_free_cam.global_position = sun.global_position if (sun and is_instance_valid(sun)) else Vector2.ZERO
 
 var _last_loaded_map_key: int = 0  # hash of last successfully queued map load
+var _map_load_gen: int = 0         # bumped each load; lets concurrent coroutines self-abort
 
 func _on_settings_changed_main() -> void:
 	if _running or _countdown_active:
@@ -299,6 +300,9 @@ func _on_import_pressed() -> void:
 	await _load_map_from_dict(raw as Dictionary)
 
 func _load_map_from_dict(data: Dictionary) -> void:
+	_map_load_gen += 1
+	var my_gen := _map_load_gen
+
 	var planets_data: Array = data.get("planets", []) as Array
 
 	# Clear existing non-sun planets
@@ -308,6 +312,9 @@ func _load_map_from_dict(data: Dictionary) -> void:
 			_velocities.erase(planet.get_instance_id())
 			planet.queue_free()
 	await get_tree().process_frame
+
+	if my_gen != _map_load_gen:
+		return  # a newer load was started while we awaited; abort
 
 	var sun: Node = get_tree().get_nodes_in_group("sun_planet").front()
 	if not sun:

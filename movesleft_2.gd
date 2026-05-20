@@ -18,3 +18,4 @@ func _process(_delta: float) -> void:
 		var tid: int = ship.get("team_id") if ship.get("team_id") != null else 0
 		text = "%d MOVES REMAINING" % GameConfig.get_team_moves(tid)
 		return
+	text = "%d MOVES REMAINING" % GameConfig.team_moves
