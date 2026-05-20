@@ -489,7 +489,7 @@ func _draw():
 			grid[triangle[1]]["cell"].position,
 			grid[triangle[2]]["cell"].position
 		])
-		var alpha := clamp(0.5 * current_scale, 0.2, 0.5)
+		var alpha: float = clampf(0.5 * current_scale, 0.2, 0.5)
 		var tri_team: int = grid[triangle[0]].get("team_id", team_id)
 		var tri_color := GameConfig.color_for(tri_team)
 		draw_colored_polygon(points, Color(tri_color.r, tri_color.g, tri_color.b, alpha))
