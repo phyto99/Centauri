@@ -103,6 +103,7 @@ signal moves_updated(remaining)
 signal yield_updated(count)
 signal team_yield_updated(team_id: int, count: int)
 signal tax_updated
+signal team_tax_earned_updated(team_id: int, amount: float)
 signal planet_hovered(planet: Node)
 signal planet_unhovered
 
@@ -773,6 +774,7 @@ func _on_animation_timer_timeout():
 								var tes: Dictionary = team_tax_earned_per_source[dominant_team_id]
 								tes[cell_team] = tes.get(cell_team, 0.0) + tax
 								emit_signal("tax_updated")
+								emit_signal("team_tax_earned_updated", dominant_team_id, tax)
 					
 					# Store current progress for next frame comparison
 					cell_data["last_progress"] = progress

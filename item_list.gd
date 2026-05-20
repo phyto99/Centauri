@@ -15,7 +15,8 @@ const _MAX_COLUMNS  = 8
 
 # ── Per-team accumulators ─────────────────────────────────────────────────────
 
-var _team_yield:     Dictionary = {}   # team_id → total yield grown
+var _team_yield:     Dictionary = {}   # team_id → crops grown by own cells (live on planets)
+var _team_tax_float: Dictionary = {}   # team_id → tax crops earned (float accumulator)
 var _team_delivered: Dictionary = {}   # team_id → crops delivered to sun (accumulated)
 
 # ── Remote peer state (populated via ColyseusSync game events) ────────────────
@@ -111,11 +112,12 @@ func _relative(value: int, max_value: int) -> int:
 	return clampi(int(float(value) / float(max_value) * 100.0), 0, 100)
 
 # food delivered / yield grown × 100, clamped 0-100 (absolute, used as raw input).
+# grown = own crops (live on planets) + tax crops earned (cumulative float → int).
 func _get_efficiency(tid: int) -> int:
-	var grown: int = _team_yield.get(tid, 0)
+	var grown: int = _team_yield.get(tid, 0) + int(_team_tax_float.get(tid, 0.0))
 	var delivered: int = _team_delivered.get(tid, 0)
 	if grown <= 0:
-		return 0
+		return 100 if delivered > 0 else 0
 	return clampi(int(float(delivered) / float(grown) * 100.0), 0, 100)
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -150,6 +152,9 @@ func _connect_planet(planet: Node) -> void:
 	if planet.has_signal("team_yield_updated") and \
 			not planet.team_yield_updated.is_connected(_on_team_yield_updated):
 		planet.team_yield_updated.connect(_on_team_yield_updated)
+	if planet.has_signal("team_tax_earned_updated") and \
+			not planet.team_tax_earned_updated.is_connected(_on_team_tax_earned_updated):
+		planet.team_tax_earned_updated.connect(_on_team_tax_earned_updated)
 	if planet.has_signal("moves_updated") and \
 			not planet.moves_updated.is_connected(_on_state_changed.unbind(1)):
 		planet.moves_updated.connect(_on_state_changed.unbind(1))
@@ -184,6 +189,10 @@ func _on_team_yield_updated(team_id: int, _count: int) -> void:
 	for planet in get_tree().get_nodes_in_group("planets"):
 		total += planet.team_yield_counts.get(team_id, 0)
 	_team_yield[team_id] = total
+	_schedule_rebuild()
+
+func _on_team_tax_earned_updated(team_id: int, amount: float) -> void:
+	_team_tax_float[team_id] = _team_tax_float.get(team_id, 0.0) + amount
 	_schedule_rebuild()
 
 func _on_food_delivered(team_id: int, amount: int) -> void:
@@ -274,7 +283,7 @@ func _rebuild_team_rows() -> void:
 		var total:           int = food_score + diversity_score + dominion_score + efficiency
 		rows.append({
 			"values": [
-				_format_millions(_team_yield.get(t, 0)),
+				_format_millions(_team_yield.get(t, 0) + int(_team_tax_float.get(t, 0.0))),
 				_format_millions(_get_team_inventory(t)),
 				_format_millions(raw_delivered[t]),
 				str(food_score),
