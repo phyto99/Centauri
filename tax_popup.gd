@@ -85,6 +85,11 @@ func _on_confirm() -> void:
 		_planet.tax_rate = int(_slider.value)
 		if _planet.has_signal("tax_updated"):
 			_planet.emit_signal("tax_updated")
+		if OS.get_name() == "Web" and not ColyseusSync.room_id.is_empty():
+			ColyseusSync.send_game_event("tax_rate_set", {
+				"planet_idx": _planet.planet_idx,
+				"tax_rate":   int(_slider.value),
+			})
 	visible = false
 
 func _unhandled_input(event: InputEvent) -> void:

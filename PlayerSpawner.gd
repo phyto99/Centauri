@@ -79,17 +79,18 @@ func _on_position_received(peer_id: int, pos: Vector2, rot: float, thrusting: bo
 	if not _ships.has(peer_id) or peer_id == _local_peer_id:
 		return
 	var ship: Node = _ships[peer_id]
-	ship.global_position = pos
-	ship.global_rotation = rot
+	ship.set("_net_pos", pos)
+	ship.set("_net_rot", rot)
+	ship.set("_net_ready", true)
 	ship.call("set_thrusting", thrusting)
-	# Give the remote ship its landing state so player.gd's physics loop
-	# moves it with the planet every frame (smooth), not just at 20 Hz (jittery).
 	if planet_idx >= 0:
-		var planet := _planet_by_idx(planet_idx)
+		var planet: Node = _planet_by_idx(planet_idx)
 		if planet != null and is_instance_valid(planet):
-			ship.set("landed_planet", planet)
-			ship.set("landing_offset", pos - planet.global_position)
-			ship.set("planet_rotation_at_landing", planet.rotation)
+			var current_landed: Variant = ship.get("landed_planet")
+			if current_landed != planet:
+				ship.set("landed_planet", planet)
+				ship.set("landing_offset", pos - planet.global_position)
+				ship.set("planet_rotation_at_landing", planet.rotation)
 		else:
 			ship.set("landed_planet", null)
 	else:

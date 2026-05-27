@@ -33,7 +33,13 @@ func apply_settings(cfg: Dictionary) -> void:
 	if cfg.has("fuelRecovery"):     fuel_recovery     = float(cfg["fuelRecovery"])
 	if cfg.has("tickSpeed"):        tick_speed        = float(cfg["tickSpeed"])
 	if cfg.has("sessionDuration"):  session_duration  = maxf(10.0, float(cfg["sessionDuration"]))
-	if cfg.has("teamMoves"):        team_moves        = maxi(1, int(cfg["teamMoves"]))
+	var moves_raw: Variant = cfg.get("teamMoves", cfg.get("movesPerRound", null))
+	if moves_raw != null:
+		var new_moves: int = maxi(1, int(moves_raw))
+		if new_moves != team_moves:
+			team_moves = new_moves
+			if not game_running:
+				team_move_pools.clear()
 	if cfg.has("mapJson") and cfg["mapJson"] != null:
 		map_json = cfg["mapJson"]
 	if cfg.has("teamColors") and cfg["teamColors"] is Array:

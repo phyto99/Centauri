@@ -18,6 +18,9 @@ var _hud_bg:          ColorRect
 var _name_input:      LineEdit
 var _cultivate_icon:  TextureRect
 var _crops_hud_label: Label
+var _cam_btn:         TextureButton
+var _cam_mode1_tex:   Texture2D
+var _cam_mode2_tex:   Texture2D
 
 @export var max_fuel: float = 100.0
 @export var fuel_depletion_rate: float = 10.0
@@ -32,6 +35,9 @@ var fuel_bar: ColorRect
 
 var thrust       := Vector2.ZERO
 var rotation_dir: float = 0.0
+var _net_pos: Vector2 = Vector2.ZERO
+var _net_rot: float   = 0.0
+var _net_ready: bool  = false
 var state        := IDLE
 var current_fuel: float = 0.0
 var food_amount:  float = 0.0
@@ -57,6 +63,9 @@ func _ready() -> void:
 	gravity_scale = 0.0
 	collision_layer = 1
 	collision_mask  = 0   # ships pass through everything; Area2D handles planet detection
+	if not is_local:
+		freeze_mode = RigidBody2D.FREEZE_MODE_KINEMATIC
+		freeze = true
 	z_index = 10          # render above planets
 	set_team_color(team_id)
 	add_to_group("players")
@@ -146,6 +155,8 @@ func _on_settings_changed() -> void:
 		fuel_bar.color = col
 	_update_trail_color()
 	_update_hud_colors(col)
+	if is_instance_valid(_cam_btn):
+		_cam_btn.modulate = col
 
 func _update_hud_colors(col: Color) -> void:
 	if is_instance_valid(_name_input):
@@ -336,6 +347,8 @@ func set_team(id: int) -> void:
 	if is_instance_valid(fuel_bar):
 		fuel_bar.color = col
 	_update_hud_colors(col)
+	if is_instance_valid(_cam_btn):
+		_cam_btn.modulate = col
 	if is_local:
 		_update_ui_color()
 
@@ -350,8 +363,17 @@ func _process(delta: float) -> void:
 			_pulse_time += delta
 			_set_ship_alpha(0.5 + 0.5 * cos(_pulse_time * TAU * 0.33))
 	update_fuel(delta)
+	if is_local and is_instance_valid(_cam_btn):
+		var cam: Camera2D = camera as Camera2D
+		var on_ship: bool
+		if cam.enabled:
+			on_ship = cam.offset.length_squared() < 1.0
+		else:
+			var mn: Node = get_tree().get_first_node_in_group("main")
+			on_ship = mn == null or not bool(mn.get("_user_panned"))
+		_cam_btn.texture_normal = _cam_mode2_tex if on_ship else _cam_mode1_tex
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if is_instance_valid(_trail):
 		if _trail_frozen:
 			pass
@@ -364,10 +386,14 @@ func _physics_process(_delta: float) -> void:
 			_trail.speed_scale = 0.0
 			_trail_frozen = true
 	if not is_local:
-		# Track the landed planet every frame so motion is smooth, not 20-Hz-steppy.
 		if landed_planet != null and is_instance_valid(landed_planet):
 			var rot_delta: float = landed_planet.rotation - planet_rotation_at_landing
 			global_position = landed_planet.global_position + landing_offset.rotated(rot_delta)
+			global_rotation = lerp_angle(global_rotation, _net_rot, minf(20.0 * delta, 1.0))
+		elif _net_ready:
+			var t: float = minf(20.0 * delta, 1.0)
+			global_position = global_position.lerp(_net_pos, t)
+			global_rotation = lerp_angle(global_rotation, _net_rot, t)
 		constant_force  = Vector2.ZERO
 		constant_torque = 0.0
 		return
@@ -445,14 +471,27 @@ func _create_fuel_bar() -> void:
 
 	_crops_hud_label             = Label.new()
 	_crops_hud_label.text        = "x 0"
-	_crops_hud_label.size        = Vector2(161.0, 30.0)
+	_crops_hud_label.size        = Vector2(108.0, 30.0)
+	_crops_hud_label.clip_contents = true
 	_crops_hud_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_crops_hud_label.add_theme_font_override("font", _condensed_font)
 	_crops_hud_label.add_theme_color_override("font_color", team_col)
 	_crops_hud_label.add_theme_font_size_override("font_size", 26)
 	_hud_cl.add_child(_crops_hud_label)
 
-	var bar      = ColorRect.new()
+	_cam_mode1_tex              = load("res://UI/mode1.svg") as Texture2D
+	_cam_mode2_tex              = load("res://UI/mode2.svg") as Texture2D
+	_cam_btn                    = TextureButton.new()
+	_cam_btn.toggle_mode        = false
+	_cam_btn.texture_normal     = _cam_mode2_tex
+	_cam_btn.stretch_mode       = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	_cam_btn.ignore_texture_size = true
+	_cam_btn.size               = Vector2(30.0, 30.0)
+	_cam_btn.pressed.connect(_on_cam_btn_pressed)
+	_cam_btn.modulate = GameConfig.color_for(team_id)
+	_hud_cl.add_child(_cam_btn)
+
+	var bar: ColorRect = ColorRect.new()
 	bar.name     = "FuelBar"
 	bar.color    = team_col
 	bar.size     = Vector2(366.0, _BAR_H)
@@ -473,7 +512,19 @@ func _reposition_hud() -> void:
 	_name_input.position      = Vector2(6.0,   row_y)
 	_cultivate_icon.position  = Vector2(187.0, row_y)
 	_crops_hud_label.position = Vector2(219.0, row_y)
+	if is_instance_valid(_cam_btn):
+		_cam_btn.position = Vector2(_HUD_W - 34.0, row_y)
 	fuel_bar.position         = Vector2(0.0,   vp_h - _BAR_H)
+
+func _on_cam_btn_pressed() -> void:
+	var cam: Camera2D = camera as Camera2D
+	if cam.enabled:
+		cam.offset = Vector2.ZERO
+	else:
+		var mn: Node = get_tree().get_first_node_in_group("main")
+		if mn:
+			mn.call("_center_free_cam")
+			mn.set("_user_panned", false)
 
 func _on_name_input_changed(new_text: String) -> void:
 	var clean := new_text.replace(" ", "")
